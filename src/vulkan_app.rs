@@ -106,7 +106,7 @@ pub struct VulkanApp {
     window_resized: bool,
     recreate_swapchain: bool,
     frames_in_flight: usize,
-    fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>>>>,
+    fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>>>>, // TODO: simplify
     previous_fence_i: u32,
 }
 
@@ -363,11 +363,11 @@ impl VulkanApp {
             .collect()
     }
 
-    pub fn notify_window_resized(self: &mut Self) {
+    pub fn notify_window_resized(&mut self) {
         self.window_resized = true;
     }
 
-    pub fn draw_frame(self: &mut Self) {
+    pub fn draw_frame(&mut self) {
         if self.window_resized || self.recreate_swapchain {
             self.recreate_swapchain = false;
 
