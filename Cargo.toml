@@ -2,4 +2,5 @@
 members = [
     "vulkano-app",
     "vulkano-windows",
+    "vulkano-android",
 ]
