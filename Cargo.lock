@@ -1117,13 +1117,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "vulkano-demo"
+name = "vulkano-app"
 version = "0.1.0"
 dependencies = [
  "vulkano",
  "vulkano-shaders",
- "vulkano-win",
- "winit",
 ]
 
 [[package]]
@@ -1163,6 +1161,16 @@ dependencies = [
  "objc",
  "raw-window-handle",
  "vulkano",
+ "winit",
+]
+
+[[package]]
+name = "vulkano-windows"
+version = "0.1.0"
+dependencies = [
+ "vulkano",
+ "vulkano-app",
+ "vulkano-win",
  "winit",
 ]
 

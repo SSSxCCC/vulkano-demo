@@ -11,24 +11,21 @@
 //!
 //! It is not commented, as the explanations can be found in the guide itself.
 
+mod platform;
+
 use std::sync::Arc;
 
-use platform::Platform;
+use platform::WindowsPlatform;
+use vulkano_app::vulkan_app::VulkanApp;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
-
-mod vulkan_app;
-#[cfg_attr(target_os = "windows", path = "platform_pc.rs")]
-#[cfg_attr(target_os = "android", path = "platform_android.rs")]
-mod platform;
-use vulkan_app::VulkanApp;
 
 fn main() {
     let event_loop = EventLoop::new();
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
 
-    let platform = Arc::new(Platform::new(window));
+    let platform = Arc::new(WindowsPlatform::new(window));
     let mut vulkan_app = VulkanApp::new(platform);
 
     event_loop.run(move |event, _, control_flow| match event {

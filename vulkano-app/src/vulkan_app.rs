@@ -81,7 +81,7 @@ mod fs {
 }
 
 pub struct VulkanApp {
-    platform: Arc<Platform>,
+    platform: Arc<dyn Platform>,
 
     library: Arc<VulkanLibrary>,
     instance: Arc<Instance>,
@@ -111,9 +111,9 @@ pub struct VulkanApp {
 }
 
 impl VulkanApp {
-    pub fn new(platform: Arc<Platform>) -> VulkanApp {
+    pub fn new(platform: Arc<dyn Platform>) -> VulkanApp {
         let library = vulkano::VulkanLibrary::new().expect("no local Vulkan library/DLL");
-        let required_extensions = vulkano_win::required_extensions(&library);
+        let required_extensions = platform.required_extensions(&library);
         let instance = Instance::new(
             library.clone(),
             InstanceCreateInfo {
