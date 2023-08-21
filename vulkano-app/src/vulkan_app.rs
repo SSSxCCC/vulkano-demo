@@ -123,7 +123,7 @@ impl VulkanApp {
         )
         .expect("failed to create instance");
 
-        let surface = platform.create_surface(instance.clone()).expect("failed to create surface");
+        let surface = platform.create_surface(&instance).expect("failed to create surface");
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,

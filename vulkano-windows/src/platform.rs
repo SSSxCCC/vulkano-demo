@@ -19,8 +19,8 @@ impl Platform for WindowsPlatform {
         vulkano_win::required_extensions(library)
     }
 
-    fn create_surface(&self, instance: Arc<Instance>) -> Result<Arc<Surface>, SurfaceCreationError> {
-        vulkano_win::create_surface_from_winit(self.window.clone(), instance)
+    fn create_surface(&self, instance: &Arc<Instance>) -> Result<Arc<Surface>, SurfaceCreationError> {
+        vulkano_win::create_surface_from_winit(self.window.clone(), instance.clone())
     }
 
     fn get_surface_size(&self) -> [u32; 2] {
