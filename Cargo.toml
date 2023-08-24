@@ -3,4 +3,5 @@ members = [
     "vulkano-app",
     "vulkano-windows",
     "vulkano-android",
+    "vulkano-android/android-activity",
 ]
