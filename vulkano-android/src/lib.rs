@@ -1,4 +1,4 @@
-use android_activity::{
+use winit::platform::android::activity::{
     input::{InputEvent, KeyAction, KeyEvent, KeyMapChar, MotionAction},
     AndroidApp, InputStatus, MainEvent, PollEvent,
 };

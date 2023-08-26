@@ -16,3 +16,11 @@ cd vulkano-android/android-project
 ./gradlew build
 ./gradlew installDebug
 ```
+
+## Enable rust analyzer hightlight and autocomplete for android sources
+
+Add the following setting to ".vscode/settings.json":
+
+'''
+"rust-analyzer.cargo.target": "aarch64-linux-android",
+'''
