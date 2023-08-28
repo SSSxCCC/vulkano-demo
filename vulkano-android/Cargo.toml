@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4"
-winit = { version = "0.29.1-beta", features = [ "android-game-activity" ] }
+winit = { version = "0.28.6", features = [ "android-game-activity" ] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger = "0.10.0"

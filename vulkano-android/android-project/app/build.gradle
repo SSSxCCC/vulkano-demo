@@ -4,12 +4,12 @@ plugins {
 
 android {
     ndkVersion "25.2.9519653"
-    compileSdk 31
+    compileSdk 33
 
     defaultConfig {
         applicationId "co.realfit.agdkmainloop"
         minSdk 28
-        targetSdk 31
+        targetSdk 33
         versionCode 1
         versionName "1.0"
     }
@@ -48,7 +48,7 @@ dependencies {
     //implementation "androidx.games:games-performance-tuner:1.5.0"
 
     // To use the Games Activity library
-    implementation "androidx.games:games-activity:2.0.2"
+    implementation "androidx.games:games-activity:1.1.0"
 
     // To use the Games Controller Library
     //implementation "androidx.games:games-controller:2.0.2"

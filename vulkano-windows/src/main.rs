@@ -22,6 +22,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
 fn main() {
+    env_logger::builder().filter_level(log::LevelFilter::Trace).parse_default_env().init();
+
     let event_loop = EventLoop::new();
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
 
@@ -35,7 +37,8 @@ fn main() {
         Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
             vulkan_app.notify_window_resized();
         }
-        Event::MainEventsCleared => {
+        Event::RedrawRequested(_) => {
+            log::info!("draw");
             vulkan_app.draw_frame();
         }
         _ => (),
