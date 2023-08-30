@@ -1,7 +1,14 @@
+mod platform;
+
+use std::sync::Arc;
+use platform::WindowsPlatform;
+use vulkano_app::vulkan_app::VulkanApp;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
+    window::WindowBuilder,
 };
+
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
 
@@ -22,20 +29,31 @@ fn main() {
 }
 
 fn _main(event_loop: EventLoop<()>) {
+    let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
+    let platform = Arc::new(WindowsPlatform::new(window));
+    let mut vulkan_app = None;
+
     log::warn!("Vulkano start main loop!");
-    event_loop.run(move |event, _, control_flow| match event {
+    event_loop.run(move |event: Event<'_, ()>, _, control_flow| match event {
         Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            log::info!("WindowEvent::CloseRequested");
             *control_flow = ControlFlow::Exit;
         }
+        Event::Resumed => {
+            log::info!("Resumed");
+            vulkan_app = Some(VulkanApp::new(platform.clone()));
+        }
         Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
-            //vulkan_app.notify_window_resized();
+            log::info!("WindowEvent::Resized");
+            if let Some(vulkan_app) = vulkan_app.as_mut() { vulkan_app.notify_window_resized() }
         }
         Event::RedrawRequested(_) => {
             log::info!("RedrawRequested");
-            //vulkan_app.draw_frame();
+            if let Some(vulkan_app) = vulkan_app.as_mut() { vulkan_app.draw_frame() }
         }
         Event::MainEventsCleared => {
             log::info!("MainEventsCleared");
+            if let Some(vulkan_app) = vulkan_app.as_mut() { vulkan_app.draw_frame() }
         }
         _ => (),
     });

@@ -1,9 +1,9 @@
 # vulkano-demo
 
-## Run windows client
+## Run desktop client
 
 ```
-cargo run -p vulkano-windows
+cargo run -p vulkano-client -F desktop
 ```
 
 ## Build android app
@@ -11,13 +11,13 @@ cargo run -p vulkano-windows
 ```
 rustup target add aarch64-linux-android
 cargo install cargo-ndk
-cargo ndk -t arm64-v8a -o vulkano-android/android-project/app/src/main/jniLibs/ build -p vulkano-android
-cd vulkano-android/android-project
+cargo ndk -t arm64-v8a -o android-project/app/src/main/jniLibs/ build -p vulkano-client
+cd android-project
 ./gradlew build
 ./gradlew installDebug
 ```
 
-## Enable rust analyzer hightlight and autocomplete for android sources
+## Enable rust analyzer hightlight and autocomplete for android source codes
 
 Add the following setting to ".vscode/settings.json":
 
