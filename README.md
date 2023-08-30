@@ -21,6 +21,6 @@ cd android-project
 
 Add the following setting to ".vscode/settings.json":
 
-'''
+```
 "rust-analyzer.cargo.target": "aarch64-linux-android",
-'''
+```
