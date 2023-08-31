@@ -1,4 +1,4 @@
-package co.realfit.agdkmainloop
+package com.sc.vulkanodemo
 
 import android.os.Bundle
 import android.view.WindowManager
