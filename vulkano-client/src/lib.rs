@@ -43,6 +43,10 @@ fn _main(event_loop: EventLoop<()>) {
             log::info!("Resumed");
             vulkan_app = Some(VulkanApp::new(platform.clone()));
         }
+        Event::Suspended => {
+            log::info!("Suspended");
+            vulkan_app = None;
+        }
         Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
             log::info!("WindowEvent::Resized");
             if let Some(vulkan_app) = vulkan_app.as_mut() { vulkan_app.notify_window_resized() }
