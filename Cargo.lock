@@ -1226,14 +1226,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "vulkano-app"
-version = "0.1.0"
-dependencies = [
- "vulkano",
- "vulkano-shaders",
-]
-
-[[package]]
 name = "vulkano-client"
 version = "0.1.0"
 dependencies = [
@@ -1241,7 +1233,7 @@ dependencies = [
  "env_logger",
  "log",
  "vulkano",
- "vulkano-app",
+ "vulkano-shaders",
  "vulkano-win",
  "winit",
 ]

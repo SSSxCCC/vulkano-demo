@@ -1,5 +1,4 @@
 [workspace]
 members = [
-    "vulkano-app",
     "vulkano-client",
 ]

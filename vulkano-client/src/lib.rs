@@ -1,8 +1,7 @@
-mod platform;
+mod vulkan_app;
 
 use std::sync::Arc;
-use platform::WindowsPlatform;
-use vulkano_app::vulkan_app::VulkanApp;
+use vulkan_app::VulkanApp;
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
@@ -30,7 +29,6 @@ fn main() {
 
 fn _main(event_loop: EventLoop<()>) {
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
-    let platform = Arc::new(WindowsPlatform::new(window));
     let mut vulkan_app = None;
 
     log::warn!("Vulkano start main loop!");
@@ -41,7 +39,7 @@ fn _main(event_loop: EventLoop<()>) {
         }
         Event::Resumed => {
             log::info!("Resumed");
-            vulkan_app = Some(VulkanApp::new(platform.clone()));
+            vulkan_app = Some(VulkanApp::new(window.clone()));
         }
         Event::Suspended => {
             log::info!("Suspended");

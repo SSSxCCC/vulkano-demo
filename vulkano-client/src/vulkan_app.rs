@@ -40,8 +40,7 @@ use vulkano::swapchain::{
 };
 use vulkano::sync::future::{FenceSignalFuture, JoinFuture};
 use vulkano::sync::{self, FlushError, GpuFuture};
-
-use crate::platform::Platform;
+use winit::window::Window;
 
 #[derive(BufferContents, Vertex)]
 #[repr(C)]
@@ -81,7 +80,7 @@ mod fs {
 }
 
 pub struct VulkanApp {
-    platform: Arc<dyn Platform>,
+    window: Arc<Window>,
 
     library: Arc<VulkanLibrary>,
     instance: Arc<Instance>,
@@ -111,9 +110,9 @@ pub struct VulkanApp {
 }
 
 impl VulkanApp {
-    pub fn new(platform: Arc<dyn Platform>) -> VulkanApp {
+    pub fn new(window: Arc<Window>) -> VulkanApp {
         let library = vulkano::VulkanLibrary::new().expect("no local Vulkan library/DLL");
-        let required_extensions = platform.required_extensions(&library);
+        let required_extensions = vulkano_win::required_extensions(&library);
         let instance = Instance::new(
             library.clone(),
             InstanceCreateInfo {
@@ -123,7 +122,7 @@ impl VulkanApp {
         )
         .expect("failed to create instance");
 
-        let surface = platform.create_surface(&instance).expect("failed to create surface");
+        let surface = vulkano_win::create_surface_from_winit(window.clone(), instance.clone()).expect("failed to create surface");
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
@@ -153,7 +152,7 @@ impl VulkanApp {
                 .surface_capabilities(&surface, Default::default())
                 .expect("failed to get surface capabilities");
     
-            let dimensions = platform.get_surface_size();
+            let dimensions = [window.inner_size().width, window.inner_size().height];
             let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
             let image_format = Some(
                 physical_device
@@ -210,7 +209,7 @@ impl VulkanApp {
     
         let viewport = Viewport {
             origin: [0.0, 0.0],
-            dimensions: platform.get_surface_size().map(|x| x as f32),
+            dimensions: [window.inner_size().width, window.inner_size().height].map(|x| x as f32),
             depth_range: 0.0..1.0,
         };
     
@@ -234,7 +233,7 @@ impl VulkanApp {
         );
 
         let num_swapchain_images = swapchain_images.len();
-        VulkanApp { platform, library, instance, surface, physical_device, device, queue, swapchain, swapchain_images, render_pass, framebuffers, memory_allocator,
+        VulkanApp { window, library, instance, surface, physical_device, device, queue, swapchain, swapchain_images, render_pass, framebuffers, memory_allocator,
             vertex_buffer, vs, fs, viewport, pipeline, command_buffer_allocator, command_buffers,
             window_resized: false, recreate_swapchain: false, frames_in_flight: num_swapchain_images, fences: vec![None; num_swapchain_images], previous_fence_i: 0 }
     }
@@ -371,7 +370,7 @@ impl VulkanApp {
         if self.window_resized || self.recreate_swapchain {
             self.recreate_swapchain = false;
 
-            let new_dimensions = self.platform.get_surface_size();
+            let new_dimensions = [self.window.inner_size().width, self.window.inner_size().height];
 
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                 image_extent: new_dimensions,
