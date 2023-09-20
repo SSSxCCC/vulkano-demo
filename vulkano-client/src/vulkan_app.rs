@@ -152,7 +152,7 @@ impl VulkanApp {
                 .surface_capabilities(&surface, Default::default())
                 .expect("failed to get surface capabilities");
     
-            let dimensions = [window.inner_size().width, window.inner_size().height];
+            let dimensions = window.inner_size();
             let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
             let image_format = Some(
                 physical_device
@@ -167,7 +167,7 @@ impl VulkanApp {
                 SwapchainCreateInfo {
                     min_image_count: caps.min_image_count,
                     image_format,
-                    image_extent: dimensions,
+                    image_extent: dimensions.into(),
                     image_usage: ImageUsage::COLOR_ATTACHMENT,
                     composite_alpha,
                     ..Default::default()
@@ -209,7 +209,7 @@ impl VulkanApp {
     
         let viewport = Viewport {
             origin: [0.0, 0.0],
-            dimensions: [window.inner_size().width, window.inner_size().height].map(|x| x as f32),
+            dimensions: window.inner_size().into(),
             depth_range: 0.0..1.0,
         };
     
@@ -370,10 +370,10 @@ impl VulkanApp {
         if self.window_resized || self.recreate_swapchain {
             self.recreate_swapchain = false;
 
-            let new_dimensions = [self.window.inner_size().width, self.window.inner_size().height];
+            let new_dimensions = self.window.inner_size();
 
             let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
-                image_extent: new_dimensions,
+                image_extent: new_dimensions.into(),
                 ..self.swapchain.create_info()
             }) {
                 Ok(r) => r,
@@ -386,7 +386,7 @@ impl VulkanApp {
             if self.window_resized {
                 self.window_resized = false;
 
-                self.viewport.dimensions = new_dimensions.map(|x| x as f32);
+                self.viewport.dimensions = new_dimensions.into();
                 let new_pipeline = Self::get_pipeline(
                     self.device.clone(),
                     self.vs.clone(),
