@@ -1,4 +1,4 @@
 [workspace]
 members = [
-    "vulkano-client",
+    "hello-triangle",
 ]
