@@ -1,4 +1,5 @@
 [workspace]
 members = [
     "hello-triangle",
+    "minimal",
 ]

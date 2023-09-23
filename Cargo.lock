@@ -610,6 +610,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimal"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "env_logger",
+ "log",
+ "vulkano",
+ "vulkano-shaders",
+ "vulkano-util",
+ "vulkano-win",
+ "winit",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1263,6 +1277,18 @@ dependencies = [
  "shaderc",
  "syn 1.0.109",
  "vulkano",
+]
+
+[[package]]
+name = "vulkano-util"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a71b6df05a391161c1baec645a918437c2949d3494bf74c8358fde291d37f5f4"
+dependencies = [
+ "ahash",
+ "vulkano",
+ "vulkano-win",
+ "winit",
 ]
 
 [[package]]
