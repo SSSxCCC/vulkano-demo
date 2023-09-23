@@ -47,8 +47,9 @@ fn _main(event_loop: EventLoop<()>) {
         }
         Event::RedrawRequested(_) => {
             log::info!("RedrawRequested");
-            if let Some(renderer) = windows.get_primary_renderer() {
-
+            if let Some(renderer) = windows.get_primary_renderer_mut() {
+                let before_future = renderer.acquire().unwrap();
+                renderer.present(before_future, true);
             }
         }
         Event::MainEventsCleared => {
