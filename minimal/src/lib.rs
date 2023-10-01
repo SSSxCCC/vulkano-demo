@@ -3,6 +3,8 @@ use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
 };
+mod triangle_renderer;
+use triangle_renderer::TriangleRenderer;
 
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
@@ -49,7 +51,10 @@ fn _main(event_loop: EventLoop<()>) {
             log::info!("RedrawRequested");
             if let Some(renderer) = windows.get_primary_renderer_mut() {
                 let before_future = renderer.acquire().unwrap();
-                renderer.present(before_future, true);
+
+                let after_future = TriangleRenderer::draw(before_future, &context, renderer);
+
+                renderer.present(after_future, true);
             }
         }
         Event::MainEventsCleared => {
