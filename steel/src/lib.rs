@@ -30,7 +30,7 @@ fn main() {
 fn _main(event_loop: EventLoop<()>) {
     let context = VulkanoContext::default();
     let mut windows = VulkanoWindows::default();
-    let engine = steel::Engine;
+    let engine = steel::Engine::new();
     engine.init();
 
     log::warn!("Vulkano start main loop!");

@@ -1,8 +1,16 @@
+use std::sync::Arc;
+
 use rapier2d::prelude::*;
 
-pub struct Engine;
+pub struct Engine {
+
+}
 
 impl Engine {
+    pub fn new() -> Engine {
+        Engine{}
+    }
+
     pub fn init(&self) {
         println!("Engine::init");
 
@@ -38,9 +46,36 @@ impl Engine {
     }
 }
 
-struct Object;
+struct Scene {
+    objects: Vec<Arc<Object>>,
+}
 
-struct Physics2DSystem{
+struct Object {
+    behaviours: Vec<Arc<dyn Behaviour>>,
+}
+
+impl Object {
+    fn add_behaviour(&mut self, behaviour: Arc<dyn Behaviour>) {
+        self.behaviours.push(behaviour);
+    }
+}
+
+trait Behaviour {
+    fn on_create(&mut self, _object: Arc<Object>) { }
+    fn on_update(&mut self) { }
+    fn on_draw(&mut self) { }
+    fn on_destroy(&mut self) { }
+}
+
+struct RigidBody2D {
+
+}
+
+impl Behaviour for RigidBody2D {
+    
+}
+
+struct Physics2DSystem {
     rigid_body_set: RigidBodySet,
     collider_set: ColliderSet,
     gravity: Vector<Real>,
