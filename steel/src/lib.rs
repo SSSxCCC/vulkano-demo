@@ -21,6 +21,7 @@ fn android_main(app: AndroidApp) {
 }
 
 #[cfg(not(target_os = "android"))]
+#[allow(dead_code)]
 fn main() {
     env_logger::builder().filter_level(log::LevelFilter::Trace).parse_default_env().init();
     let event_loop = EventLoopBuilder::new().build();
