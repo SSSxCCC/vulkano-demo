@@ -1,24 +1,23 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use specs::prelude::*;
 use rapier2d::prelude::*;
 
 pub struct Engine {
-    scene: Option<Arc<Scene>>,
-    managers: Vec<Box<dyn Manager>>,
+    world: World, // ecs world, also contains resources and managers
 }
 
 impl Engine {
-    pub fn new() -> Arc<Self> {
-        let managers: Vec<Box<dyn Manager>> = vec![Box::new(Physics2DManager::new())];
-        Arc::new(Engine { scene: None, managers })
+    pub fn new() -> Arc<RwLock<Self>> {
+        let mut world = World::new();
+        world.insert(Physics2DManager::new());
+        world.insert(ObjectManager::new());
+        Arc::new(RwLock::new(Engine { world }))
     }
 
-    pub fn init(self: &Arc<Self>) {
+    pub fn init(&mut self) {
         println!("Engine::init");
 
-        self.scene = Some(Scene::new(self.clone()));
-
-        let mut physics2d_manager = Physics2DManager::new();
+        let physics2d_manager = self.world.get_mut::<Physics2DManager>().unwrap();
 
         /* Create the ground. */
         let collider = ColliderBuilder::cuboid(100.0, 0.1).build();
@@ -34,7 +33,7 @@ impl Engine {
 
         /* Run the game loop, stepping the simulation once per frame. */
         for _ in 0..200 {
-            physics2d_manager.on_update();
+            physics2d_manager.update();
 
             let ball_body = &physics2d_manager.rigid_body_set[ball_body_handle];
             println!("Ball altitude: {}", ball_body.translation().y);
@@ -50,53 +49,48 @@ impl Engine {
     }
 }
 
-trait Manager {
-    fn new() -> Self where Self: Sized;
-    fn on_update(&mut self) { }
+// The game object manager
+struct ObjectManager {
+    objects: Vec<Arc<RwLock<Object>>>,
 }
 
-struct Scene {
-    engine: Arc<Engine>,
-    objects: Vec<Arc<Object>>,
-}
-
-impl Scene {
-    fn new(engine: Arc<Engine>) -> Arc<Self> {
-        Arc::new(Scene { engine, objects: Vec::new() })
+impl ObjectManager {
+    fn new() -> Self {
+        ObjectManager { objects: Vec::new() }
     }
 }
 
 struct Object {
-    behaviours: Vec<Arc<dyn Behaviour>>,
-    scene: Arc<Scene>,
+    behaviours: Vec<Arc<RwLock<dyn Behaviour>>>,
+    engine: Arc<RwLock<Engine>>,
 }
 
 impl Object {
-    fn add_behaviour(&mut self, behaviour: Arc<dyn Behaviour>) {
+    fn add_behaviour(&mut self, behaviour: Arc<RwLock<dyn Behaviour>>) {
         self.behaviours.push(behaviour);
     }
 }
 
-trait Behaviour {
-    fn new() -> Arc<dyn Behaviour> where Self: Sized;
-    fn on_create(&mut self, _object: Arc<Object>) { }
+trait Behaviour: Send + Sync { // Send and Sync are required to insert into specs::World as resource
+    fn new() -> Arc<RwLock<dyn Behaviour>> where Self: Sized;
+    fn on_create(&mut self, _object: Arc<RwLock<Object>>) { }
     fn on_update(&mut self) { }
     fn on_draw(&mut self) { }
     fn on_destroy(&mut self) { }
 }
 
 struct RigidBody2D {
-    object: Option<Arc<Object>>,
+    object: Option<Arc<RwLock<Object>>>,
 }
 
 impl Behaviour for RigidBody2D {
-    fn new() -> Arc<dyn Behaviour> {
-        Arc::new(RigidBody2D { object: None })
+    fn new() -> Arc<RwLock<dyn Behaviour>> {
+        Arc::new(RwLock::new(RigidBody2D { object: None }))
     }
 
-    fn on_create(&mut self, object: Arc<Object>) {
+    fn on_create(&mut self, object: Arc<RwLock<Object>>) {
         self.object = Some(object);
-        object.scene.engine.get
+        //object.scene.engine.get
     }
 }
 
@@ -116,7 +110,7 @@ struct Physics2DManager {
     event_handler: Box<dyn EventHandler>,
 }
 
-impl Manager for Physics2DManager {
+impl Physics2DManager {
     fn new() -> Self {
         Physics2DManager { rigid_body_set: RigidBodySet::new(), collider_set: ColliderSet::new(), gravity: vector![0.0, -9.81],
             integration_parameters: IntegrationParameters::default(), physics_pipeline: PhysicsPipeline::new(),
@@ -125,7 +119,7 @@ impl Manager for Physics2DManager {
             ccd_solver: CCDSolver::new(), physics_hooks: Box::new(()), event_handler: Box::new(()) }
     }
 
-    fn on_update(&mut self) {
+    fn update(&mut self) {
         self.physics_pipeline.step(
             &self.gravity,
             &self.integration_parameters,
