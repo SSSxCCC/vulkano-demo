@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::{sync::{Arc, RwLock}, any::{TypeId, Any}};
 use specs::prelude::*;
 use rapier2d::prelude::*;
 
@@ -27,7 +27,7 @@ impl Engine {
         let rigid_body = RigidBodyBuilder::dynamic()
                 .translation(vector![0.0, 10.0])
                 .build();
-        let collider = ColliderBuilder::ball(0.5).restitution(0.7).build();
+        let collider = ColliderBuilder::cuboid(0.5, 0.5).restitution(0.7).build();
         let ball_body_handle = physics2d_manager.rigid_body_set.insert(rigid_body);
         physics2d_manager.collider_set.insert_with_parent(collider, ball_body_handle, &mut physics2d_manager.rigid_body_set);
 
@@ -46,51 +46,6 @@ impl Engine {
 
     pub fn draw(&self) {
 
-    }
-}
-
-// The game object manager
-struct ObjectManager {
-    objects: Vec<Arc<RwLock<Object>>>,
-}
-
-impl ObjectManager {
-    fn new() -> Self {
-        ObjectManager { objects: Vec::new() }
-    }
-}
-
-struct Object {
-    behaviours: Vec<Arc<RwLock<dyn Behaviour>>>,
-    engine: Arc<RwLock<Engine>>,
-}
-
-impl Object {
-    fn add_behaviour(&mut self, behaviour: Arc<RwLock<dyn Behaviour>>) {
-        self.behaviours.push(behaviour);
-    }
-}
-
-trait Behaviour: Send + Sync { // Send and Sync are required to insert into specs::World as resource
-    fn new() -> Arc<RwLock<dyn Behaviour>> where Self: Sized;
-    fn on_create(&mut self, _object: Arc<RwLock<Object>>) { }
-    fn on_update(&mut self) { }
-    fn on_draw(&mut self) { }
-    fn on_destroy(&mut self) { }
-}
-
-struct RigidBody2D {
-    object: Option<Arc<RwLock<Object>>>,
-}
-
-impl Behaviour for RigidBody2D {
-    fn new() -> Arc<RwLock<dyn Behaviour>> {
-        Arc::new(RwLock::new(RigidBody2D { object: None }))
-    }
-
-    fn on_create(&mut self, object: Arc<RwLock<Object>>) {
-        self.object = Some(object);
-        //object.scene.engine.get
     }
 }
 
@@ -135,5 +90,95 @@ impl Physics2DManager {
             self.physics_hooks.as_ref(),
             self.event_handler.as_ref(),
         );
+    }
+}
+
+// The game object manager
+struct ObjectManager {
+    objects: Vec<Arc<RwLock<Object>>>,
+}
+
+impl ObjectManager {
+    fn new() -> Self {
+        ObjectManager { objects: Vec::new() }
+    }
+}
+
+struct Object {
+    behaviours: Vec<Arc<RwLock<dyn Behaviour>>>,
+    engine: Arc<RwLock<Engine>>,
+}
+
+impl Object {
+    fn add_behaviour(&mut self, behaviour: Arc<RwLock<dyn Behaviour>>) {
+        self.behaviours.push(behaviour);
+    }
+
+    fn get_behaviour<T>(&self) -> Option<Arc<RwLock<dyn Behaviour>>> {
+        for behaviour in self.behaviours {
+            if TypeId::of::<T>() == behaviour.read().unwrap().type_id() { // TODO: can we get TypeId without read?
+                return Some(behaviour);
+            }
+        }
+        None
+    }
+}
+
+trait Behaviour: Send + Sync { // Send and Sync are required to insert into specs::World as resource
+    fn new() -> Arc<RwLock<dyn Behaviour>> where Self: Sized;
+    fn on_create(&mut self, _object: Arc<RwLock<Object>>) { }
+    fn on_update(&mut self) { }
+    fn on_draw(&mut self) { }
+    fn on_destroy(&mut self) { }
+}
+
+struct RigidBody2D {
+    object: Option<Arc<RwLock<Object>>>,
+    handle: RigidBodyHandle,
+}
+
+impl Behaviour for RigidBody2D {
+    fn new() -> Arc<RwLock<dyn Behaviour>> {
+        Arc::new(RwLock::new(RigidBody2D { object: None, handle: RigidBodyHandle::invalid() }))
+    }
+
+    fn on_create(&mut self, object: Arc<RwLock<Object>>) {
+        self.object = Some(object);
+        let engine = &self.object.unwrap().read().unwrap().engine;
+        let world = &mut engine.write().unwrap().world;
+        let physics2d_manager = world.get_mut::<Physics2DManager>().unwrap();
+
+        let rigid_body = RigidBodyBuilder::dynamic()
+                .translation(vector![0.0, 10.0])
+                .build();
+        self.handle = physics2d_manager.rigid_body_set.insert(rigid_body);
+    }
+}
+
+struct CuboidCollider2D {
+    object: Option<Arc<RwLock<Object>>>,
+}
+
+impl Behaviour for CuboidCollider2D {
+    fn new() -> Arc<RwLock<dyn Behaviour>> {
+        Arc::new(RwLock::new(CuboidCollider2D { object: None }))
+    }
+
+    fn on_create(&mut self, object: Arc<RwLock<Object>>) {
+        self.object = Some(object);
+        let rb2d = self.object.unwrap().read().unwrap().get_behaviour::<RigidBody2D>();
+        let engine = &self.object.unwrap().read().unwrap().engine;
+        let world = &mut engine.write().unwrap().world;
+        let physics2d_manager = world.get_mut::<Physics2DManager>().unwrap();
+
+
+        let collider = ColliderBuilder::cuboid(0.5, 0.5).restitution(0.7).build();
+        if let Some(rb2d) = rb2d {
+            let rb2d_handle = (rb2d.read().unwrap() as RigidBody2D).handle;
+            physics2d_manager.collider_set.insert_with_parent(collider, rb2d_handle, &mut physics2d_manager.rigid_body_set);
+        } else {
+
+        }
+        
     }
 }
