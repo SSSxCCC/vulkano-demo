@@ -114,10 +114,10 @@ impl Object {
         self.behaviours.push(behaviour);
     }
 
-    fn get_behaviour<T>(&self) -> Option<Arc<RwLock<dyn Behaviour>>> {
-        for behaviour in self.behaviours {
-            if TypeId::of::<T>() == behaviour.read().unwrap().type_id() { // TODO: can we get TypeId without read?
-                return Some(behaviour);
+    fn get_behaviour<T: 'static>(&self) -> Option<Arc<RwLock<dyn Behaviour>>> {
+        for behaviour in &self.behaviours {
+            if TypeId::of::<T>() == behaviour.read().unwrap().as_any().type_id() { // TODO: can we get TypeId without read?
+                return Some(behaviour.clone());
             }
         }
         None
@@ -130,6 +130,7 @@ trait Behaviour: Send + Sync { // Send and Sync are required to insert into spec
     fn on_update(&mut self) { }
     fn on_draw(&mut self) { }
     fn on_destroy(&mut self) { }
+    fn as_any(&self) -> &dyn Any;
 }
 
 struct RigidBody2D {
@@ -142,9 +143,13 @@ impl Behaviour for RigidBody2D {
         Arc::new(RwLock::new(RigidBody2D { object: None, handle: RigidBodyHandle::invalid() }))
     }
 
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
     fn on_create(&mut self, object: Arc<RwLock<Object>>) {
         self.object = Some(object);
-        let engine = &self.object.unwrap().read().unwrap().engine;
+        let engine = &self.object.as_ref().unwrap().read().unwrap().engine;
         let world = &mut engine.write().unwrap().world;
         let physics2d_manager = world.get_mut::<Physics2DManager>().unwrap();
 
@@ -157,28 +162,31 @@ impl Behaviour for RigidBody2D {
 
 struct CuboidCollider2D {
     object: Option<Arc<RwLock<Object>>>,
+    handle: ColliderHandle,
 }
 
 impl Behaviour for CuboidCollider2D {
     fn new() -> Arc<RwLock<dyn Behaviour>> {
-        Arc::new(RwLock::new(CuboidCollider2D { object: None }))
+        Arc::new(RwLock::new(CuboidCollider2D { object: None, handle: ColliderHandle::invalid() }))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 
     fn on_create(&mut self, object: Arc<RwLock<Object>>) {
         self.object = Some(object);
-        let rb2d = self.object.unwrap().read().unwrap().get_behaviour::<RigidBody2D>();
-        let engine = &self.object.unwrap().read().unwrap().engine;
+        let rb2d = self.object.as_ref().unwrap().read().unwrap().get_behaviour::<RigidBody2D>();
+        let engine = &self.object.as_ref().unwrap().read().unwrap().engine;
         let world = &mut engine.write().unwrap().world;
         let physics2d_manager = world.get_mut::<Physics2DManager>().unwrap();
 
-
         let collider = ColliderBuilder::cuboid(0.5, 0.5).restitution(0.7).build();
-        if let Some(rb2d) = rb2d {
-            let rb2d_handle = (rb2d.read().unwrap() as RigidBody2D).handle;
-            physics2d_manager.collider_set.insert_with_parent(collider, rb2d_handle, &mut physics2d_manager.rigid_body_set);
+        self.handle = if let Some(rb2d) = rb2d {
+            let rb2d_handle = rb2d.read().unwrap().as_any().downcast_ref::<RigidBody2D>().unwrap().handle;
+            physics2d_manager.collider_set.insert_with_parent(collider, rb2d_handle, &mut physics2d_manager.rigid_body_set)
         } else {
-
+            physics2d_manager.collider_set.insert(collider)
         }
-        
     }
 }
