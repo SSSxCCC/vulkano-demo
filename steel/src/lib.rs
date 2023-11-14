@@ -31,8 +31,8 @@ fn main() {
 fn _main(event_loop: EventLoop<()>) {
     let context = VulkanoContext::default();
     let mut windows = VulkanoWindows::default();
-    let engine = steel::Engine::new();
-    engine.write().unwrap().init();
+    let mut engine = steel::create();
+    engine.init();
 
     log::warn!("Vulkano start main loop!");
     event_loop.run(move |event: Event<'_, ()>, event_loop, control_flow| match event {
@@ -58,7 +58,7 @@ fn _main(event_loop: EventLoop<()>) {
                 let before_future = renderer.acquire().unwrap();
 
                 let after_future = TriangleRenderer::draw(before_future, &context, renderer);
-                engine.read().unwrap().update();
+                engine.update();
 
                 renderer.present(after_future, true);
             }
