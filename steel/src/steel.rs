@@ -1,27 +1,39 @@
-use std::{any::{TypeId, Any}, collections::HashMap};
-use specs::prelude::*;
+use std::collections::HashMap;
+use glam::{Vec2, Vec3, Vec4};
+use specs::{prelude::*, Component};
 use rapier2d::prelude::*;
 
-pub trait TEngine {
+pub trait Engine {
     fn init(&mut self);
     fn update(&mut self);
     fn draw(&mut self);
 }
 
-pub fn create() -> Box<dyn TEngine> {
+pub fn create() -> Box<dyn Engine> {
     let mut world = World::new();
-    world.insert(Physics2DManager::new());
-    world.insert(ObjectManager::new());
-    Box::new(Engine { world })
+    let mut dispatcher = DispatcherBuilder::new()
+        //.with(HelloWorld, "hello_world", &[])
+        //.with(UpdatePos, "update_pos", &["hello_world"])
+        //.with(HelloWorld, "hello_updated", &["update_pos"])
+        .build();
+    Box::new(EngineImpl { world, dispatcher })
 }
 
-struct Engine {
+struct EngineImpl<'a> {
     world: World, // ecs world, also contains resources and managers
+    dispatcher: Dispatcher<'a, 'a>,
 }
 
-impl TEngine for Engine {
+impl Engine for EngineImpl<'_> {
     fn init(&mut self) {
-        println!("Engine::init");
+        log::info!("Engine::init");
+
+        self.dispatcher.setup(&mut self.world);
+        self.world.insert(Physics2DManager::new());
+        self.world.register::<Transform2D>(); // TODO: remove this
+        self.world.create_entity().with(Transform2D { position: Vec2 { x: 1.0, y: 2.0 }, rotation: 30.0 }).build();
+
+
 
         let physics2d_manager = self.world.get_mut::<Physics2DManager>().unwrap();
 
@@ -42,12 +54,21 @@ impl TEngine for Engine {
             physics2d_manager.update();
 
             let ball_body = &physics2d_manager.rigid_body_set[ball_body_handle];
-            println!("Ball altitude: {}", ball_body.translation().y);
+            log::info!("Ball altitude: {}", ball_body.translation().y);
         }
     }
 
     fn update(&mut self) {
+        log::info!("Engine::update");
+        let physics2d_manager = self.world.get_mut::<Physics2DManager>().unwrap();
+        physics2d_manager.update();
 
+        self.dispatcher.dispatch(&mut self.world);
+        self.world.maintain();
+
+        let mut world_data = WorldData::new();
+        world_data.add_component::<Transform2D>(&self.world);
+        log::info!("world_data={:?}", world_data);
     }
 
     fn draw(&mut self) {
@@ -99,113 +120,67 @@ impl Physics2DManager {
     }
 }
 
-// The game object manager
-struct ObjectManager {
-    objects: HashMap<ObjectHandle, Object>,
+trait Edit: Component {
+    fn name() -> &'static str;
+
+    fn to_data(&self) -> ComponentData {
+        ComponentData::new()
+    }
+
+    fn from_data(&mut self, data: ComponentData) { }
 }
 
-impl ObjectManager {
+#[derive(Debug)]
+enum Variant {
+    Int32(i32),
+    Float32(f32),
+    String(String),
+    Vec2(Vec2),
+    Vec3(Vec3),
+    vec4(Vec4),
+}
+
+// ComponentData contains all variant in a component, key is variant name
+type ComponentData = HashMap<&'static str, Variant>;
+
+// EntityData contains all component data in a entity, key is component name
+type EntityData = HashMap<&'static str, ComponentData>;
+
+// WorldData contains all entity data in the world
+#[derive(Debug)]
+struct WorldData(HashMap<Entity, EntityData>);
+
+impl WorldData {
     fn new() -> Self {
-        ObjectManager { objects: HashMap::new() }
+        WorldData(HashMap::new())
     }
 
-    fn create(&mut self, engine: &mut Engine) {
-        for (handle, object) in &mut self.objects {
-            for behaviour in &mut object.behaviours {
-                behaviour.on_create(*handle, engine);
-            }
+    fn add_component<T: Edit>(&mut self, world: &World) {
+        for (e, c) in (&world.entities(), &world.read_component::<T>()).join() {
+            let entity_data = self.0.entry(e).or_default();
+            entity_data.insert(T::name(), c.to_data());
         }
     }
 }
 
-#[derive(Eq, PartialEq, Hash, Clone, Copy)]
-struct ObjectHandle(u32);
-
-impl ObjectHandle {
-    const INVALID: ObjectHandle = ObjectHandle(0);
+#[derive(Component)]
+struct Transform2D {
+    position: Vec2,
+    rotation: f32,
 }
 
-struct Object {
-    behaviours: Vec<Box<dyn Behaviour>>,
-}
+impl Edit for Transform2D {
+    fn name() -> &'static str { "Transform2D" }
 
-impl Object {
-    fn new() -> Self {
-        Object { behaviours: Vec::new() }
+    fn to_data(&self) -> ComponentData {
+        let mut data = ComponentData::new();
+        data.insert("position", Variant::Vec2(self.position));
+        data.insert("rotation", Variant::Float32(self.rotation));
+        data
     }
 
-    fn add_behaviour(&mut self, behaviour: Box<dyn Behaviour>) {
-        self.behaviours.push(behaviour);
-    }
-
-    fn get_behaviour<T: 'static>(&self) -> Option<&Box<dyn Behaviour>> {
-        for behaviour in &self.behaviours {
-            if TypeId::of::<T>() == behaviour.as_any().type_id() { // TODO: can we get TypeId without as_any?
-                return Some(behaviour);
-            }
-        }
-        None
-    }
-}
-
-trait Behaviour: Send + Sync { // Send and Sync are required to insert into specs::World as resource
-    fn new() -> Box<dyn Behaviour> where Self: Sized;
-    fn on_create(&mut self, object_handle: ObjectHandle, engine: &mut Engine) { }
-    fn on_update(&mut self) { }
-    fn on_draw(&mut self) { }
-    fn on_destroy(&mut self) { }
-    fn as_any(&self) -> &dyn Any;
-}
-
-struct RigidBody2D {
-    handle: RigidBodyHandle,
-}
-
-impl Behaviour for RigidBody2D {
-    fn new() -> Box<dyn Behaviour> {
-        Box::new(RigidBody2D { handle: RigidBodyHandle::invalid() })
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn on_create(&mut self, object_handle: ObjectHandle, engine: &mut Engine) {
-        let physics2d_manager = engine.world.get_mut::<Physics2DManager>().unwrap();
-        let rigid_body = RigidBodyBuilder::dynamic()
-                .translation(vector![0.0, 10.0])
-                .build();
-        self.handle = physics2d_manager.rigid_body_set.insert(rigid_body);
-    }
-}
-
-struct CuboidCollider2D {
-    handle: ColliderHandle,
-}
-
-impl Behaviour for CuboidCollider2D {
-    fn new() -> Box<dyn Behaviour> {
-        Box::new(CuboidCollider2D { handle: ColliderHandle::invalid() })
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn on_create(&mut self, object_handle: ObjectHandle, engine: &mut Engine) {
-        let collider = ColliderBuilder::cuboid(0.5, 0.5).restitution(0.7).build();
-
-        let rb2d_handle = {
-            let object_manager = engine.world.read_resource::<ObjectManager>();
-            let rb2d = object_manager.objects.get(&object_handle).unwrap().get_behaviour::<RigidBody2D>();
-            rb2d.map(|rb2d| { rb2d.as_any().downcast_ref::<RigidBody2D>().unwrap().handle })
-        };
-
-        let physics2d_manager = engine.world.get_mut::<Physics2DManager>().unwrap();
-        self.handle = if let Some(rb2d_handle) = rb2d_handle {
-            physics2d_manager.collider_set.insert_with_parent(collider, rb2d_handle, &mut physics2d_manager.rigid_body_set)
-        } else {
-            physics2d_manager.collider_set.insert(collider)
-        }
+    fn from_data(&mut self, data: ComponentData) {
+        self.position = if let Some(Variant::Vec2(position)) = data.get("position") { *position } else { Default::default() };
+        self.rotation = if let Some(Variant::Float32(rotation)) = data.get("rotation") { *rotation } else { Default::default() };
     }
 }
