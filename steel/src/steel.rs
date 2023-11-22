@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use glam::{Vec2, Vec3, Vec4};
-use specs::{prelude::*, Component};
 use rapier2d::prelude::*;
+use shipyard::{World, Component, EntityId, View, IntoIter, IntoWithId, Unique, UniqueViewMut};
 
 pub trait Engine {
     fn init(&mut self);
@@ -10,61 +10,53 @@ pub trait Engine {
 }
 
 pub fn create() -> Box<dyn Engine> {
-    let mut world = World::new();
-    let mut dispatcher = DispatcherBuilder::new()
-        //.with(HelloWorld, "hello_world", &[])
-        //.with(UpdatePos, "update_pos", &["hello_world"])
-        //.with(HelloWorld, "hello_updated", &["update_pos"])
-        .build();
-    Box::new(EngineImpl { world, dispatcher })
+    let world = World::new();
+    Box::new(EngineImpl { world })
 }
 
-struct EngineImpl<'a> {
+struct EngineImpl {
     world: World, // ecs world, also contains resources and managers
-    dispatcher: Dispatcher<'a, 'a>,
 }
 
-impl Engine for EngineImpl<'_> {
+impl Engine for EngineImpl {
     fn init(&mut self) {
         log::info!("Engine::init");
 
-        self.dispatcher.setup(&mut self.world);
-        self.world.insert(Physics2DManager::new());
-        self.world.register::<Transform2D>(); // TODO: remove this
-        self.world.create_entity().with(Transform2D { position: Vec2 { x: 1.0, y: 2.0 }, rotation: 30.0 }).build();
+        self.world.add_unique(Physics2DManager::new());
+        self.world.add_entity(Transform2D { position: Vec2 { x: 1.0, y: 2.0 }, rotation: 30.0 });
 
 
 
-        let physics2d_manager = self.world.get_mut::<Physics2DManager>().unwrap();
+        self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
+            let physics2d_manager = physics2d_manager.as_mut();
 
-        /* Create the ground. */
-        let collider = ColliderBuilder::cuboid(100.0, 0.1).build();
-        physics2d_manager.collider_set.insert(collider);
+            /* Create the ground. */
+            let collider = ColliderBuilder::cuboid(100.0, 0.1).build();
+            physics2d_manager.collider_set.insert(collider);
 
-        /* Create the bouncing ball. */
-        let rigid_body = RigidBodyBuilder::dynamic()
-                .translation(vector![0.0, 10.0])
-                .build();
-        let collider = ColliderBuilder::cuboid(0.5, 0.5).restitution(0.7).build();
-        let ball_body_handle = physics2d_manager.rigid_body_set.insert(rigid_body);
-        physics2d_manager.collider_set.insert_with_parent(collider, ball_body_handle, &mut physics2d_manager.rigid_body_set);
+            /* Create the bouncing ball. */
+            let rigid_body = RigidBodyBuilder::dynamic()
+                    .translation(vector![0.0, 10.0])
+                    .build();
+            let collider = ColliderBuilder::cuboid(0.5, 0.5).restitution(0.7).build();
+            let ball_body_handle = physics2d_manager.rigid_body_set.insert(rigid_body);
+            physics2d_manager.collider_set.insert_with_parent(collider, ball_body_handle, &mut physics2d_manager.rigid_body_set);
 
-        /* Run the game loop, stepping the simulation once per frame. */
-        for _ in 0..200 {
-            physics2d_manager.update();
+            /* Run the game loop, stepping the simulation once per frame. */
+            for _ in 0..200 {
+                physics2d_manager.update();
 
-            let ball_body = &physics2d_manager.rigid_body_set[ball_body_handle];
-            log::info!("Ball altitude: {}", ball_body.translation().y);
-        }
+                let ball_body = &physics2d_manager.rigid_body_set[ball_body_handle];
+                log::info!("Ball altitude: {}", ball_body.translation().y);
+            }
+        });
     }
 
     fn update(&mut self) {
         log::info!("Engine::update");
-        let physics2d_manager = self.world.get_mut::<Physics2DManager>().unwrap();
-        physics2d_manager.update();
-
-        self.dispatcher.dispatch(&mut self.world);
-        self.world.maintain();
+        self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
+            physics2d_manager.update();
+        });
 
         let mut world_data = WorldData::new();
         world_data.add_component::<Transform2D>(&self.world);
@@ -76,6 +68,7 @@ impl Engine for EngineImpl<'_> {
     }
 }
 
+#[derive(Unique)]
 struct Physics2DManager {
     rigid_body_set: RigidBodySet,
     collider_set: ColliderSet,
@@ -148,18 +141,20 @@ type EntityData = HashMap<&'static str, ComponentData>;
 
 // WorldData contains all entity data in the world
 #[derive(Debug)]
-struct WorldData(HashMap<Entity, EntityData>);
+struct WorldData(HashMap<EntityId, EntityData>);
 
 impl WorldData {
     fn new() -> Self {
         WorldData(HashMap::new())
     }
 
-    fn add_component<T: Edit>(&mut self, world: &World) {
-        for (e, c) in (&world.entities(), &world.read_component::<T>()).join() {
-            let entity_data = self.0.entry(e).or_default();
-            entity_data.insert(T::name(), c.to_data());
-        }
+    fn add_component<T: Edit + Send + Sync>(&mut self, world: &World) {
+        world.run(|c: View<T>| {
+            for (e, c) in c.iter().with_id() {
+                let entity_data = self.0.entry(e).or_default();
+                entity_data.insert(T::name(), c.to_data());
+            }
+        })
     }
 }
 
@@ -183,4 +178,24 @@ impl Edit for Transform2D {
         self.position = if let Some(Variant::Vec2(position)) = data.get("position") { *position } else { Default::default() };
         self.rotation = if let Some(Variant::Float32(rotation)) = data.get("rotation") { *rotation } else { Default::default() };
     }
+}
+
+#[derive(Component)]
+struct RigidBody2D {
+    handle: RigidBodyHandle,
+}
+
+impl Edit for RigidBody2D {
+    fn name() -> &'static str { "RigidBody2D" }
+}
+
+#[derive(Component)]
+struct CuboidCollider2D {
+    handle: ColliderHandle,
+    size: Vec2,
+    restitution: f32,
+}
+
+impl Edit for CuboidCollider2D {
+    fn name() -> &'static str { "CuboidCollider2D" }
 }
