@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use glam::{Vec2, Vec3, Vec4};
 use rapier2d::prelude::*;
-use shipyard::{World, Component, EntityId, View, IntoIter, IntoWithId, Unique, UniqueViewMut};
+use shipyard::{World, Component, EntityId, View, IntoIter, IntoWithId, Unique, UniqueViewMut, ViewMut, AddComponent, Get};
 
 pub trait Engine {
     fn init(&mut self);
@@ -49,6 +49,34 @@ impl Engine for EngineImpl {
                 let ball_body = &physics2d_manager.rigid_body_set[ball_body_handle];
                 log::info!("Ball altitude: {}", ball_body.translation().y);
             }
+        });
+
+        self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>,
+                mut rb2d: ViewMut<RigidBody2D>, mut cub2d: ViewMut<CuboidCollider2D>,
+                mut transform2d: ViewMut<Transform2D>| {
+            let physics2d_manager = physics2d_manager.as_mut();
+            for (e, mut rb2d) in rb2d.inserted_or_modified_mut().iter().with_id() {
+                if let Some(rigid_body) = physics2d_manager.rigid_body_set.get_mut(rb2d.handle) {
+                    rigid_body.set_body_type(rb2d.body_type, true);
+                } else {
+                    if !transform2d.contains(e) {
+                        transform2d.add_component_unchecked(e, Transform2D::default());
+                    }
+                    let transform2d = transform2d.get(e).unwrap();
+                    let rigid_body = RigidBodyBuilder::new(rb2d.body_type)
+                            .translation(vector![transform2d.position.x, transform2d.position.y])
+                            .rotation(transform2d.rotation).build();
+                    rb2d.handle = physics2d_manager.rigid_body_set.insert(rigid_body);
+                }
+
+                if let Ok(cub2d) = cub2d.get(e) {
+                    if physics2d_manager.collider_set.contains(cub2d.handle) {
+                        physics2d_manager.collider_set.set_parent(cub2d.handle, Some(rb2d.handle), &mut physics2d_manager.rigid_body_set)
+                    }
+                }
+            }
+
+
         });
     }
 
@@ -158,7 +186,7 @@ impl WorldData {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 struct Transform2D {
     position: Vec2,
     rotation: f32,
@@ -181,8 +209,10 @@ impl Edit for Transform2D {
 }
 
 #[derive(Component)]
+#[track(All)]
 struct RigidBody2D {
     handle: RigidBodyHandle,
+    body_type: RigidBodyType,
 }
 
 impl Edit for RigidBody2D {
@@ -190,10 +220,11 @@ impl Edit for RigidBody2D {
 }
 
 #[derive(Component)]
+#[track(All)]
 struct CuboidCollider2D {
     handle: ColliderHandle,
-    size: Vec2,
-    restitution: f32,
+    //size: Vec2,
+    //restitution: f32,
 }
 
 impl Edit for CuboidCollider2D {
