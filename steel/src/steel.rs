@@ -38,7 +38,7 @@ impl Engine for EngineImpl {
             let rigid_body = RigidBodyBuilder::dynamic()
                     .translation(vector![0.0, 10.0])
                     .build();
-            let collider = ColliderBuilder::cuboid(0.5, 0.5).restitution(0.7).build();
+            let collider = ColliderBuilder::new(SharedShape::cuboid(0.5, 0.5)).restitution(0.7).build();
             let ball_body_handle = physics2d_manager.rigid_body_set.insert(rigid_body);
             physics2d_manager.collider_set.insert_with_parent(collider, ball_body_handle, &mut physics2d_manager.rigid_body_set);
 
@@ -51,7 +51,7 @@ impl Engine for EngineImpl {
             }
         });
 
-        let entity = self.world.add_entity(CuboidCollider2D::new(Vec2::new(1.0, 1.0), 0.7));
+        let entity = self.world.add_entity(Collider2D::new(SharedShape::cuboid(1.0, 1.0), 0.7));
         self.world.run(physics2d_update_system);
         self.world.add_component(entity, RigidBody2D::new(RigidBodyType::Dynamic));
         self.world.run(physics2d_update_system);
@@ -68,7 +68,7 @@ impl Engine for EngineImpl {
         let mut world_data = WorldData::new();
         world_data.add_component::<Transform2D>(&self.world);
         world_data.add_component::<RigidBody2D>(&self.world);
-        world_data.add_component::<CuboidCollider2D>(&self.world);
+        world_data.add_component::<Collider2D>(&self.world);
         log::info!("world_data={:?}", world_data);
     }
 
@@ -123,7 +123,7 @@ impl Physics2DManager {
 }
 
 fn physics2d_update_system(mut physics2d_manager: UniqueViewMut<Physics2DManager>,
-        mut rb2d: ViewMut<RigidBody2D>, mut cub2d: ViewMut<CuboidCollider2D>,
+        mut rb2d: ViewMut<RigidBody2D>, mut cub2d: ViewMut<Collider2D>,
         mut transform2d: ViewMut<Transform2D>) {
     let physics2d_manager = physics2d_manager.as_mut();
     for (e, mut rb2d) in rb2d.inserted_or_modified_mut().iter().with_id() {
@@ -246,20 +246,36 @@ impl Edit for RigidBody2D {
     fn name() -> &'static str { "RigidBody2D" }
 }
 
-#[derive(Component, Debug)]
-#[track(All)]
-struct CuboidCollider2D {
-    handle: ColliderHandle,
-    size: Vec2,
-    restitution: f32,
-}
+struct ShapeWrapper(SharedShape);
 
-impl CuboidCollider2D {
-    fn new(size: Vec2, restitution: f32) -> Self {
-        CuboidCollider2D { handle: ColliderHandle::invalid(), size, restitution }
+impl std::ops::Deref for ShapeWrapper {
+    type Target = SharedShape;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl Edit for CuboidCollider2D {
-    fn name() -> &'static str { "CuboidCollider2D" }
+impl std::fmt::Debug for ShapeWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ShapeWrapper").field(&self.shape_type()).finish() // TODO: print all members
+    }
+}
+
+#[derive(Component, Debug)]
+#[track(All)]
+struct Collider2D {
+    handle: ColliderHandle,
+    shape: ShapeWrapper,
+    restitution: f32,
+}
+
+impl Collider2D {
+    fn new(shape: SharedShape, restitution: f32) -> Self {
+        Collider2D { handle: ColliderHandle::invalid(), shape: ShapeWrapper(shape), restitution }
+    }
+}
+
+impl Edit for Collider2D {
+    fn name() -> &'static str { "Collider2D" }
 }
