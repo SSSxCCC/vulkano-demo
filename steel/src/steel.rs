@@ -63,8 +63,8 @@ impl Engine for EngineImpl {
             self.world.run(physics2d_update_system);
             let mut world_data = WorldData::new();
             world_data.add_component::<Transform2D>(&self.world);
-            //world_data.add_component::<RigidBody2D>(&self.world);
-            //world_data.add_component::<Collider2D>(&self.world);
+            world_data.add_component::<RigidBody2D>(&self.world);
+            world_data.add_component::<Collider2D>(&self.world);
             log::info!("world_data={:?}", world_data);
         }
     }
@@ -209,35 +209,59 @@ trait Edit: Component {
 }
 
 #[derive(Debug)]
-enum Variant {
+enum Value {
     Int32(i32),
     Float32(f32),
     String(String),
     Vec2(Vec2),
     Vec3(Vec3),
-    vec4(Vec4),
+    Vec4(Vec4),
 }
 
-// ComponentData contains all variant in a component, key is variant name
-type ComponentData = HashMap<&'static str, Variant>;
+#[derive(Debug)]
+struct Variant {
+    name: &'static str,
+    value: Value,
+}
+
+// ComponentData contains all variant in a component
+#[derive(Debug)]
+struct ComponentData {
+    name: &'static str,
+    variants: Vec<Variant>,
+}
 
 // EntityData contains all component data in a entity, key is component name
-type EntityData = HashMap<&'static str, ComponentData>;
+#[derive(Debug)]
+struct EntityData {
+    id: EntityId,
+    components: Vec<ComponentData>,
+}
 
 // WorldData contains all entity data in the world
 #[derive(Debug)]
-struct WorldData(HashMap<EntityId, EntityData>);
+struct WorldData{
+    entities: Vec<EntityData>,
+    id_index_map: HashMap<EntityId, usize>,
+}
 
 impl WorldData {
     fn new() -> Self {
-        WorldData(HashMap::new())
+        WorldData{entities: Vec::new(), id_index_map: HashMap::new()}
     }
 
     fn add_component<T: Edit + Send + Sync>(&mut self, world: &World) {
         world.run(|c: View<T>| {
             for (e, c) in c.iter().with_id() {
-                let entity_data = self.0.entry(e).or_default();
-                entity_data.insert(T::name(), c.to_data());
+                let index = if let Some(index) = self.id_index_map.get(&e) {
+                    *index
+                } else {
+                    self.entities.push(EntityData { id: e, components: Vec::new() });
+                    self.entities.len() as usize - 1
+                };
+                let entity_data = self.id_index_map.entry(e).or_insert((|| {self.entities.len()})());
+
+                self.entities[index].components.push(c.to_data());
             }
         })
     }
