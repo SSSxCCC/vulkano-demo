@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use glam::{Vec2, Vec3, Vec4};
 use rapier2d::prelude::*;
+use rayon::iter::ParallelIterator;
 use shipyard::{World, Component, EntityId, View, IntoIter, IntoWithId, Unique, UniqueViewMut, ViewMut, AddComponent, Get};
 
 pub trait Engine {
@@ -27,7 +28,7 @@ impl Engine for EngineImpl {
 
 
 
-        self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
+        /*self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
             let physics2d_manager = physics2d_manager.as_mut();
 
             /* Create the ground. */
@@ -49,27 +50,37 @@ impl Engine for EngineImpl {
                 let ball_body = &physics2d_manager.rigid_body_set[ball_body_handle];
                 log::info!("Ball altitude: {}", ball_body.translation().y);
             }
-        });
+        });*/
 
-        let entity = self.world.add_entity(Collider2D::new(SharedShape::cuboid(1.0, 1.0), 0.7));
-        self.world.run(physics2d_update_system);
-        self.world.add_component(entity, RigidBody2D::new(RigidBodyType::Dynamic));
-        self.world.run(physics2d_update_system);
-        self.world.run(physics2d_update_system);
-        self.world.run(physics2d_update_system);
+        self.world.add_entity((Transform2D { position: Vec2 { x: 0.0, y: 10.0 }, rotation: 0.0 },
+                RigidBody2D::new(RigidBodyType::Dynamic),
+                Collider2D::new(SharedShape::cuboid(0.5, 0.5), 0.7)));
+        self.world.add_entity((Transform2D { position: Vec2 { x: 0.0, y: 0.0 }, rotation: 0.0 },
+                Collider2D::new(SharedShape::cuboid(100.0, 0.1), 0.7)));
+        self.world.run(physics2d_maintain_system);
+
+        for _ in 0..200 {
+            self.world.run(physics2d_update_system);
+            let mut world_data = WorldData::new();
+            world_data.add_component::<Transform2D>(&self.world);
+            //world_data.add_component::<RigidBody2D>(&self.world);
+            //world_data.add_component::<Collider2D>(&self.world);
+            log::info!("world_data={:?}", world_data);
+        }
     }
 
     fn update(&mut self) {
         log::info!("Engine::update");
-        self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
-            physics2d_manager.update();
-        });
+        //self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
+        //    physics2d_manager.update();
+        //});
+        //self.world.run(physics2d_update_system);
 
-        let mut world_data = WorldData::new();
-        world_data.add_component::<Transform2D>(&self.world);
-        world_data.add_component::<RigidBody2D>(&self.world);
-        world_data.add_component::<Collider2D>(&self.world);
-        log::info!("world_data={:?}", world_data);
+        //let mut world_data = WorldData::new();
+        //world_data.add_component::<Transform2D>(&self.world);
+        //world_data.add_component::<RigidBody2D>(&self.world);
+        //world_data.add_component::<Collider2D>(&self.world);
+        //log::info!("world_data={:?}", world_data);
     }
 
     fn draw(&mut self) {
@@ -122,8 +133,8 @@ impl Physics2DManager {
     }
 }
 
-fn physics2d_update_system(mut physics2d_manager: UniqueViewMut<Physics2DManager>,
-        mut rb2d: ViewMut<RigidBody2D>, mut cub2d: ViewMut<Collider2D>,
+fn physics2d_maintain_system(mut physics2d_manager: UniqueViewMut<Physics2DManager>,
+        mut rb2d: ViewMut<RigidBody2D>, mut col2d: ViewMut<Collider2D>,
         mut transform2d: ViewMut<Transform2D>) {
     let physics2d_manager = physics2d_manager.as_mut();
     for (e, mut rb2d) in rb2d.inserted_or_modified_mut().iter().with_id() {
@@ -140,26 +151,51 @@ fn physics2d_update_system(mut physics2d_manager: UniqueViewMut<Physics2DManager
             rb2d.handle = physics2d_manager.rigid_body_set.insert(rigid_body);
         }
 
-        log::info!("update rb2d! cub2d.get(e)={:?}", cub2d.get(e));
-        if let Ok(cub2d) = cub2d.get(e) {
-            log::info!("physics2d_manager.collider_set.contains(cub2d.handle)={:?}", physics2d_manager.collider_set.contains(cub2d.handle));
-            if physics2d_manager.collider_set.contains(cub2d.handle) {
+        log::info!("update rb2d! col2d.get(e)={:?}", col2d.get(e));
+        if let Ok(col2d) = col2d.get(e) {
+            log::info!("physics2d_manager.collider_set.contains(col2d.handle)={:?}", physics2d_manager.collider_set.contains(col2d.handle));
+            if physics2d_manager.collider_set.contains(col2d.handle) {
                 log::info!("update parent!");
-                physics2d_manager.collider_set.set_parent(cub2d.handle, Some(rb2d.handle), &mut physics2d_manager.rigid_body_set)
+                physics2d_manager.collider_set.set_parent(col2d.handle, Some(rb2d.handle), &mut physics2d_manager.rigid_body_set)
             }
         }
     }
-    rb2d.clear_all_inserted_and_modified();
 
-    log::info!("count={:?}", cub2d.inserted_or_modified_mut().iter().count());
-    for (e, mut cub2d) in cub2d.inserted_or_modified_mut().iter().with_id() {
-        if let Some(collider) = physics2d_manager.collider_set.get_mut(cub2d.handle) {
-            //collider.set_shape(shape)
+    log::info!("count={:?}", col2d.inserted_or_modified_mut().iter().count());
+    for (e, mut col2d) in col2d.inserted_or_modified_mut().iter().with_id() {
+        if let Some(collider) = physics2d_manager.collider_set.get_mut(col2d.handle) {
+            collider.set_shape(col2d.shape.clone());
+            collider.set_restitution(col2d.restitution);
         } else {
-
+            if !transform2d.contains(e) {
+                transform2d.add_component_unchecked(e, Transform2D::default());
+            }
+            let transform2d = transform2d.get(e).unwrap();
+            let mut collider = ColliderBuilder::new(col2d.shape.clone()).restitution(col2d.restitution).build();
+            if let Ok(rb2d) = &rb2d.get(e) {
+                // TODO: add position and rotation relative to parent
+                col2d.handle = physics2d_manager.collider_set.insert_with_parent(collider, rb2d.handle, &mut physics2d_manager.rigid_body_set);
+            } else {
+                collider.set_translation(vector![transform2d.position.x, transform2d.position.y]);
+                //collider.set_rotation(transform2d.rotation); TODO: how to set_rotation?
+                col2d.handle = physics2d_manager.collider_set.insert(collider);
+            }
         }
     }
-    cub2d.clear_all_inserted_and_modified();
+
+    rb2d.clear_all_inserted_and_modified();
+    col2d.clear_all_inserted_and_modified();
+}
+
+fn physics2d_update_system(mut physics2d_manager: UniqueViewMut<Physics2DManager>,
+        rb2d: View<RigidBody2D>, mut transform2d: ViewMut<Transform2D>) {
+    physics2d_manager.update();
+    (&rb2d, &mut transform2d).par_iter().for_each(|(rb2d, mut transform2d)| {
+        let rigid_body = &physics2d_manager.rigid_body_set[rb2d.handle];
+        transform2d.position.x = rigid_body.translation().x;
+        transform2d.position.y = rigid_body.translation().y;
+        transform2d.rotation = rigid_body.rotation().angle();
+    });
 }
 
 trait Edit: Component {
