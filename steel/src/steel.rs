@@ -202,7 +202,7 @@ trait Edit: Component {
     fn name() -> &'static str;
 
     fn to_data(&self) -> ComponentData {
-        ComponentData::new()
+        ComponentData::new(Self::name())
     }
 
     fn from_data(&mut self, data: ComponentData) { }
@@ -231,6 +231,12 @@ struct ComponentData {
     variants: Vec<Variant>,
 }
 
+impl ComponentData {
+    fn new(name: &'static str) -> Self {
+        ComponentData { name, variants: Vec::new() }
+    }
+}
+
 // EntityData contains all component data in a entity, key is component name
 #[derive(Debug)]
 struct EntityData {
@@ -253,14 +259,10 @@ impl WorldData {
     fn add_component<T: Edit + Send + Sync>(&mut self, world: &World) {
         world.run(|c: View<T>| {
             for (e, c) in c.iter().with_id() {
-                let index = if let Some(index) = self.id_index_map.get(&e) {
-                    *index
-                } else {
+                let index = *self.id_index_map.entry(e).or_insert(self.entities.len());
+                if index == self.entities.len() {
                     self.entities.push(EntityData { id: e, components: Vec::new() });
-                    self.entities.len() as usize - 1
-                };
-                let entity_data = self.id_index_map.entry(e).or_insert((|| {self.entities.len()})());
-
+                }
                 self.entities[index].components.push(c.to_data());
             }
         })
@@ -277,15 +279,20 @@ impl Edit for Transform2D {
     fn name() -> &'static str { "Transform2D" }
 
     fn to_data(&self) -> ComponentData {
-        let mut data = ComponentData::new();
-        data.insert("position", Variant::Vec2(self.position));
-        data.insert("rotation", Variant::Float32(self.rotation));
+        let mut data = ComponentData::new(Self::name());
+        data.variants.push(Variant { name: "position", value: Value::Vec2(self.position) });
+        data.variants.push(Variant { name: "rotation", value: Value::Float32(self.rotation) });
         data
     }
 
     fn from_data(&mut self, data: ComponentData) {
-        self.position = if let Some(Variant::Vec2(position)) = data.get("position") { *position } else { Default::default() };
-        self.rotation = if let Some(Variant::Float32(rotation)) = data.get("rotation") { *rotation } else { Default::default() };
+        for v in data.variants {
+            match v.name {
+                "position" => self.position = if let Value::Vec2(position) = v.value { position } else { Default::default() },
+                "rotation" => self.rotation = if let Value::Float32(rotation) = v.value { rotation } else { Default::default() },
+                _ => (),
+            }
+        }
     }
 }
 
