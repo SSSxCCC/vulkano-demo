@@ -24,63 +24,25 @@ impl Engine for EngineImpl {
         log::info!("Engine::init");
 
         self.world.add_unique(Physics2DManager::new());
-        //self.world.add_entity(Transform2D { position: Vec2 { x: 1.0, y: 2.0 }, rotation: 30.0 });
-
-
-
-        /*self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
-            let physics2d_manager = physics2d_manager.as_mut();
-
-            /* Create the ground. */
-            let collider = ColliderBuilder::cuboid(100.0, 0.1).build();
-            physics2d_manager.collider_set.insert(collider);
-
-            /* Create the bouncing ball. */
-            let rigid_body = RigidBodyBuilder::dynamic()
-                    .translation(vector![0.0, 10.0])
-                    .build();
-            let collider = ColliderBuilder::new(SharedShape::cuboid(0.5, 0.5)).restitution(0.7).build();
-            let ball_body_handle = physics2d_manager.rigid_body_set.insert(rigid_body);
-            physics2d_manager.collider_set.insert_with_parent(collider, ball_body_handle, &mut physics2d_manager.rigid_body_set);
-
-            /* Run the game loop, stepping the simulation once per frame. */
-            for _ in 0..200 {
-                physics2d_manager.update();
-
-                let ball_body = &physics2d_manager.rigid_body_set[ball_body_handle];
-                log::info!("Ball altitude: {}", ball_body.translation().y);
-            }
-        });*/
 
         self.world.add_entity((Transform2D { position: Vec2 { x: 0.0, y: 10.0 }, rotation: 0.0 },
                 RigidBody2D::new(RigidBodyType::Dynamic),
                 Collider2D::new(SharedShape::cuboid(0.5, 0.5), 0.7)));
         self.world.add_entity((Transform2D { position: Vec2 { x: 0.0, y: 0.0 }, rotation: 0.0 },
                 Collider2D::new(SharedShape::cuboid(100.0, 0.1), 0.7)));
-        self.world.run(physics2d_maintain_system);
-
-        for _ in 0..200 {
-            self.world.run(physics2d_update_system);
-            let mut world_data = WorldData::new();
-            world_data.add_component::<Transform2D>(&self.world);
-            world_data.add_component::<RigidBody2D>(&self.world);
-            world_data.add_component::<Collider2D>(&self.world);
-            log::info!("world_data={:?}", world_data);
-        }
     }
 
     fn update(&mut self) {
         log::info!("Engine::update");
-        //self.world.run(|mut physics2d_manager: UniqueViewMut<Physics2DManager>| {
-        //    physics2d_manager.update();
-        //});
-        //self.world.run(physics2d_update_system);
 
-        //let mut world_data = WorldData::new();
-        //world_data.add_component::<Transform2D>(&self.world);
-        //world_data.add_component::<RigidBody2D>(&self.world);
-        //world_data.add_component::<Collider2D>(&self.world);
-        //log::info!("world_data={:?}", world_data);
+        self.world.run(physics2d_maintain_system);
+        self.world.run(physics2d_update_system);
+
+        let mut world_data = WorldData::new();
+        world_data.add_component::<Transform2D>(&self.world);
+        world_data.add_component::<RigidBody2D>(&self.world);
+        world_data.add_component::<Collider2D>(&self.world);
+        log::info!("world_data={:?}", world_data);
     }
 
     fn draw(&mut self) {
@@ -151,17 +113,13 @@ fn physics2d_maintain_system(mut physics2d_manager: UniqueViewMut<Physics2DManag
             rb2d.handle = physics2d_manager.rigid_body_set.insert(rigid_body);
         }
 
-        log::info!("update rb2d! col2d.get(e)={:?}", col2d.get(e));
         if let Ok(col2d) = col2d.get(e) {
-            log::info!("physics2d_manager.collider_set.contains(col2d.handle)={:?}", physics2d_manager.collider_set.contains(col2d.handle));
             if physics2d_manager.collider_set.contains(col2d.handle) {
-                log::info!("update parent!");
                 physics2d_manager.collider_set.set_parent(col2d.handle, Some(rb2d.handle), &mut physics2d_manager.rigid_body_set)
             }
         }
     }
 
-    log::info!("count={:?}", col2d.inserted_or_modified_mut().iter().count());
     for (e, mut col2d) in col2d.inserted_or_modified_mut().iter().with_id() {
         if let Some(collider) = physics2d_manager.collider_set.get_mut(col2d.handle) {
             collider.set_shape(col2d.shape.clone());
