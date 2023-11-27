@@ -3,8 +3,6 @@ use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
 };
-mod triangle_renderer;
-use triangle_renderer::TriangleRenderer;
 
 mod steel;
 
@@ -57,8 +55,8 @@ fn _main(event_loop: EventLoop<()>) {
             if let Some(renderer) = windows.get_primary_renderer_mut() {
                 let before_future = renderer.acquire().unwrap();
 
-                let after_future = TriangleRenderer::draw(before_future, &context, renderer);
                 engine.update();
+                let after_future = engine.draw(before_future, &context, renderer);
 
                 renderer.present(after_future, true);
             }
