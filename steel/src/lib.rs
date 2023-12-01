@@ -33,25 +33,32 @@ fn _main(event_loop: EventLoop<()>) {
     engine.init();
 
     log::warn!("Vulkano start main loop!");
-    event_loop.run(move |event: Event<'_, ()>, event_loop, control_flow| match event {
-        Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-            log::info!("WindowEvent::CloseRequested");
-            *control_flow = ControlFlow::Exit;
-        }
+    event_loop.run(move |event, event_loop, control_flow| match event {
         Event::Resumed => {
-            log::info!("Resumed");
+            log::info!("Event::Resumed");
             windows.create_window(&event_loop, &context, &WindowDescriptor::default(), |_|{});
         }
         Event::Suspended => {
-            log::info!("Suspended");
+            log::info!("Event::Suspended");
             windows.remove_renderer(windows.primary_window_id().unwrap());
         }
-        Event::WindowEvent { event: WindowEvent::Resized(_), .. } => {
-            log::info!("WindowEvent::Resized");
-            if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+        Event::WindowEvent { event , .. } => match event {
+            WindowEvent::CloseRequested => {
+                log::info!("WindowEvent::CloseRequested");
+                *control_flow = ControlFlow::Exit;
+            }
+            WindowEvent::Resized(_) => {
+                log::info!("WindowEvent::Resized");
+                if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                log::info!("WindowEvent::ScaleFactorChanged");
+                if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+            }
+            _ => ()
         }
         Event::RedrawRequested(_) => {
-            log::info!("RedrawRequested");
+            log::info!("Event::RedrawRequested");
             if let Some(renderer) = windows.get_primary_renderer_mut() {
                 let before_future = renderer.acquire().unwrap();
 
@@ -62,7 +69,7 @@ fn _main(event_loop: EventLoop<()>) {
             }
         }
         Event::MainEventsCleared => {
-            log::info!("MainEventsCleared");
+            log::info!("Event::MainEventsCleared");
             if let Some(renderer) = windows.get_primary_renderer() { renderer.window().request_redraw() }
         }
         _ => (),
