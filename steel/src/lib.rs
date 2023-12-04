@@ -1,3 +1,4 @@
+use egui_winit_vulkano::{Gui, GuiConfig};
 use vulkano_util::{window::{VulkanoWindows, WindowDescriptor}, context::VulkanoContext};
 use winit::{
     event::{Event, WindowEvent},
@@ -29,6 +30,8 @@ fn main() {
 fn _main(event_loop: EventLoop<()>) {
     let context = VulkanoContext::default();
     let mut windows = VulkanoWindows::default();
+    let mut gui = None;
+    let mut demo_windows = egui_demo_lib::DemoWindows::default();
     let mut engine = steel::create();
     engine.init();
 
@@ -37,35 +40,51 @@ fn _main(event_loop: EventLoop<()>) {
         Event::Resumed => {
             log::info!("Event::Resumed");
             windows.create_window(&event_loop, &context, &WindowDescriptor::default(), |_|{});
+            let renderer = windows.get_primary_renderer().unwrap();
+            gui = Some(Gui::new(&event_loop, renderer.surface(), renderer.graphics_queue(), renderer.swapchain_format(), GuiConfig { is_overlay: true, ..Default::default() }));
         }
         Event::Suspended => {
             log::info!("Event::Suspended");
+            gui = None;
             windows.remove_renderer(windows.primary_window_id().unwrap());
         }
-        Event::WindowEvent { event , .. } => match event {
-            WindowEvent::CloseRequested => {
-                log::info!("WindowEvent::CloseRequested");
-                *control_flow = ControlFlow::Exit;
+        Event::WindowEvent { event , .. } => {
+            if let Some(gui) = gui.as_mut() {
+                let _pass_events_to_game = !gui.update(&event);
             }
-            WindowEvent::Resized(_) => {
-                log::info!("WindowEvent::Resized");
-                if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+            match event {
+                WindowEvent::CloseRequested => {
+                    log::info!("WindowEvent::CloseRequested");
+                    *control_flow = ControlFlow::Exit;
+                }
+                WindowEvent::Resized(_) => {
+                    log::info!("WindowEvent::Resized");
+                    if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+                }
+                WindowEvent::ScaleFactorChanged { .. } => {
+                    log::info!("WindowEvent::ScaleFactorChanged");
+                    if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+                }
+                _ => ()
             }
-            WindowEvent::ScaleFactorChanged { .. } => {
-                log::info!("WindowEvent::ScaleFactorChanged");
-                if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
-            }
-            _ => ()
         }
         Event::RedrawRequested(_) => {
             log::info!("Event::RedrawRequested");
             if let Some(renderer) = windows.get_primary_renderer_mut() {
-                let before_future = renderer.acquire().unwrap();
+                let gui = gui.as_mut().unwrap();
+                gui.immediate_ui(|gui| {
+                    let ctx = gui.context();
+                    demo_windows.ui(&ctx);
+                });
+
+                let gpu_future = renderer.acquire().unwrap();
 
                 engine.update();
-                let after_future = engine.draw(before_future, &context, renderer);
+                let gpu_future = engine.draw(gpu_future, &context, renderer);
 
-                renderer.present(after_future, true);
+                let gpu_future = gui.draw_on_image(gpu_future, renderer.swapchain_image_view());
+
+                renderer.present(gpu_future, true);
             }
         }
         Event::MainEventsCleared => {
