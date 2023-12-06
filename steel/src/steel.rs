@@ -1,15 +1,23 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use glam::{Vec2, Vec3, Vec4, Mat4, Quat};
 use rapier2d::prelude::*;
 use rayon::iter::ParallelIterator;
 use shipyard::{World, Component, EntityId, View, IntoIter, IntoWithId, Unique, UniqueViewMut, ViewMut, AddComponent, Get};
-use vulkano::{render_pass::{FramebufferCreateInfo, Framebuffer, Subpass}, buffer::{BufferContents, Buffer, BufferCreateInfo, BufferUsage}, pipeline::{graphics::{vertex_input::Vertex, viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState}, GraphicsPipeline, Pipeline}, memory::allocator::{AllocationCreateInfo, MemoryUsage}, command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryCommandBufferAbstract}, sync::GpuFuture};
+use vulkano::{render_pass::{FramebufferCreateInfo, Framebuffer, Subpass}, buffer::{BufferContents, Buffer, BufferCreateInfo, BufferUsage}, pipeline::{graphics::{vertex_input::Vertex, viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState}, GraphicsPipeline, Pipeline}, memory::allocator::{AllocationCreateInfo, MemoryUsage}, command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryCommandBufferAbstract}, sync::GpuFuture, image::ImageViewAbstract};
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
+
+pub struct DrawInfo<'a> {
+    pub before_future: Box<dyn GpuFuture>,
+    pub context: &'a VulkanoContext,
+    pub renderer: &'a VulkanoWindowRenderer,
+    pub image: Arc<dyn ImageViewAbstract>, // the image we will draw
+    pub window_size: Vec2,
+}
 
 pub trait Engine {
     fn init(&mut self);
     fn update(&mut self);
-    fn draw(&mut self, before_future: Box<dyn GpuFuture>, context: &VulkanoContext, renderer: &VulkanoWindowRenderer) -> Box<dyn GpuFuture>;
+    fn draw(&mut self, info: DrawInfo) -> Box<dyn GpuFuture>;
 }
 
 pub fn create() -> Box<dyn Engine> {
@@ -49,15 +57,15 @@ impl Engine for EngineImpl {
         log::info!("world_data={:?}", world_data);
     }
 
-    fn draw(&mut self, before_future: Box<dyn GpuFuture>, context: &VulkanoContext, renderer: &VulkanoWindowRenderer) -> Box<dyn GpuFuture> {
+    fn draw(&mut self, info: DrawInfo) -> Box<dyn GpuFuture> {
         self.world.run(|transform2d: View<Transform2D>, renderer2d: View<Renderer2D>| {
             let render_pass = vulkano::single_pass_renderpass!(
-                context.device().clone(),
+                info.context.device().clone(),
                 attachments: {
                     color: {
                         load: Clear,
                         store: Store,
-                        format: renderer.swapchain_format(), // set the format the same as the swapchain
+                        format: info.renderer.swapchain_format(), // set the format the same as the swapchain
                         samples: 1,
                     },
                 },
@@ -71,18 +79,18 @@ impl Engine for EngineImpl {
             let framebuffer = Framebuffer::new(
                 render_pass.clone(),
                 FramebufferCreateInfo {
-                    attachments: vec![renderer.swapchain_image_view()],
+                    attachments: vec![info.image],
                     ..Default::default()
                 },
             )
             .unwrap();
 
-            let vs = vs::load(context.device().clone()).expect("failed to create shader module");
-            let fs = fs::load(context.device().clone()).expect("failed to create shader module");
+            let vs = vs::load(info.context.device().clone()).expect("failed to create shader module");
+            let fs = fs::load(info.context.device().clone()).expect("failed to create shader module");
         
             let viewport = Viewport {
                 origin: [0.0, 0.0],
-                dimensions: renderer.window().inner_size().into(),
+                dimensions: info.window_size.into(),
                 depth_range: 0.0..1.0,
             };
 
@@ -93,14 +101,14 @@ impl Engine for EngineImpl {
                 .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
                 .fragment_shader(fs.entry_point("main").unwrap(), ())
                 .render_pass(Subpass::from(render_pass, 0).unwrap())
-                .build(context.device().clone())
+                .build(info.context.device().clone())
                 .unwrap();
 
-            let command_buffer_allocator = StandardCommandBufferAllocator::new(context.device().clone(), Default::default());
+            let command_buffer_allocator = StandardCommandBufferAllocator::new(info.context.device().clone(), Default::default());
 
             let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
                 &command_buffer_allocator,
-                renderer.graphics_queue().queue_family_index(),
+                info.renderer.graphics_queue().queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
             )
             .unwrap();
@@ -118,9 +126,8 @@ impl Engine for EngineImpl {
 
             let camera_pos = Vec3::ZERO;
             let view = Mat4::look_at_lh(camera_pos, camera_pos + Vec3::NEG_Z, Vec3::Y);
-            let window_size = renderer.window().inner_size();
             let half_height = 10.0;
-            let half_width = half_height * window_size.width as f32 / window_size.height as f32;
+            let half_width = half_height * info.window_size.x / info.window_size.y as f32;
             let projection = Mat4::orthographic_lh(half_width, -half_width, half_height, -half_height, -1000.0, 1000.0);
 
             for (transform2d, renderer2d) in (&transform2d, &renderer2d).iter() {
@@ -142,7 +149,7 @@ impl Engine for EngineImpl {
                     position: [0.5, -0.5],
                 };
                 let vertex_buffer = Buffer::from_iter(
-                    context.memory_allocator().as_ref(),
+                    info.context.memory_allocator().as_ref(),
                     BufferCreateInfo {
                         usage: BufferUsage::VERTEX_BUFFER,
                         ..Default::default()
@@ -156,7 +163,7 @@ impl Engine for EngineImpl {
                 .unwrap();
         
                 let index_buffer = Buffer::from_iter(
-                    context.memory_allocator(),
+                    info.context.memory_allocator(),
                     BufferCreateInfo { usage: BufferUsage::INDEX_BUFFER, ..Default::default() },
                     AllocationCreateInfo { usage: MemoryUsage::Upload, ..Default::default() },
                     vec![0u16, 1, 2, 2, 3, 0].into_iter()).unwrap();
@@ -171,7 +178,7 @@ impl Engine for EngineImpl {
 
             command_buffer_builder.end_render_pass().unwrap();
             let command_buffer = command_buffer_builder.build().unwrap();
-            command_buffer.execute_after(before_future, renderer.graphics_queue()).unwrap().boxed()
+            command_buffer.execute_after(info.before_future, info.renderer.graphics_queue()).unwrap().boxed()
         })
     }
 }
