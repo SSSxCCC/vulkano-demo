@@ -1,4 +1,4 @@
-use vulkano::{render_pass::{FramebufferCreateInfo, Framebuffer, Subpass}, buffer::{BufferContents, Buffer, BufferCreateInfo, BufferUsage}, pipeline::{graphics::{vertex_input::Vertex, viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState}, GraphicsPipeline}, memory::allocator::{AllocationCreateInfo, MemoryUsage}, command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryCommandBufferAbstract}, sync::GpuFuture};
+use vulkano::{buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage}, command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, pipeline::{graphics::{color_blend::{ColorBlendAttachmentState, ColorBlendState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo}, layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{Framebuffer, FramebufferCreateInfo, Subpass}, sync::GpuFuture};
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
 
 #[derive(BufferContents, Vertex)]
@@ -38,9 +38,7 @@ mod fs {
     }
 }
 
-pub struct TriangleRenderer {
-
-}
+pub struct TriangleRenderer;
 
 impl TriangleRenderer {
     pub fn draw(before_future: Box<dyn GpuFuture>, context: &VulkanoContext, renderer: &VulkanoWindowRenderer) -> Box<dyn GpuFuture> {
@@ -48,18 +46,17 @@ impl TriangleRenderer {
             context.device().clone(),
             attachments: {
                 color: {
-                    load: Clear,
-                    store: Store,
                     format: renderer.swapchain_format(), // set the format the same as the swapchain
                     samples: 1,
+                    load_op: Clear,
+                    store_op: Store,
                 },
             },
             pass: {
                 color: [color],
                 depth_stencil: {},
             },
-        )
-        .unwrap();
+        ).unwrap();
 
         let framebuffer = Framebuffer::new(
             render_pass.clone(),
@@ -67,8 +64,7 @@ impl TriangleRenderer {
                 attachments: vec![renderer.swapchain_image_view()],
                 ..Default::default()
             },
-        )
-        .unwrap();
+        ).unwrap();
 
         let vertex1 = MyVertex {
             position: [-0.5, -0.5],
@@ -80,47 +76,67 @@ impl TriangleRenderer {
             position: [0.5, -0.25],
         };
         let vertex_buffer = Buffer::from_iter(
-            context.memory_allocator().as_ref(),
+            context.memory_allocator().clone(),
             BufferCreateInfo {
                 usage: BufferUsage::VERTEX_BUFFER,
                 ..Default::default()
             },
             AllocationCreateInfo {
-                usage: MemoryUsage::Upload,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             vec![vertex1, vertex2, vertex3].into_iter(),
-        )
-        .unwrap();
+        ).unwrap();
     
-        let vs = vs::load(context.device().clone()).expect("failed to create shader module");
-        let fs = fs::load(context.device().clone()).expect("failed to create shader module");
-    
+        let vs = vs::load(context.device().clone()).unwrap().entry_point("main").unwrap();
+        let fs = fs::load(context.device().clone()).unwrap().entry_point("main").unwrap();
+
+        let vertex_input_state = MyVertex::per_vertex().definition(&vs.info().input_interface).unwrap();
+
+        let stages = [
+            PipelineShaderStageCreateInfo::new(vs),
+            PipelineShaderStageCreateInfo::new(fs),
+        ];
+
+        let layout = PipelineLayout::new(
+            context.device().clone(),
+            PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+                .into_pipeline_layout_create_info(context.device().clone())
+                .unwrap(),
+        ).unwrap();
+
         let viewport = Viewport {
-            origin: [0.0, 0.0],
-            dimensions: renderer.window().inner_size().into(),
-            depth_range: 0.0..1.0,
+            offset: [0.0, 0.0],
+            extent: renderer.window().inner_size().into(),
+            depth_range: 0.0..=1.0,
         };
-    
-        let pipeline = GraphicsPipeline::start()
-        .vertex_input_state(MyVertex::per_vertex())
-        .vertex_shader(vs.entry_point("main").unwrap(), ())
-        .input_assembly_state(InputAssemblyState::new())
-        .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
-        .fragment_shader(fs.entry_point("main").unwrap(), ())
-        .render_pass(Subpass::from(render_pass, 0).unwrap())
-        .build(context.device().clone())
-        .unwrap();
+
+        let subpass = Subpass::from(render_pass.clone(), 0).unwrap();
+
+        let pipeline = GraphicsPipeline::new(context.device().clone(), None, GraphicsPipelineCreateInfo {
+            stages: stages.into_iter().collect(),
+            vertex_input_state: Some(vertex_input_state),
+            input_assembly_state: Some(InputAssemblyState::default()),
+            rasterization_state: Some(RasterizationState::default()),
+            multisample_state: Some(MultisampleState::default()),
+            color_blend_state: Some(ColorBlendState::with_attachment_states(
+                subpass.num_color_attachments(),
+                ColorBlendAttachmentState::default())),
+            viewport_state: Some(ViewportState::default()),
+            dynamic_state: [DynamicState::Viewport].into_iter().collect(),
+            subpass: Some(subpass.into()),
+            ..GraphicsPipelineCreateInfo::layout(layout)
+        }).unwrap();
 
         let command_buffer_allocator = StandardCommandBufferAllocator::new(context.device().clone(), Default::default());
-    
+
         let command_buffer = {
             let mut builder = AutoCommandBufferBuilder::primary(
                 &command_buffer_allocator,
                 renderer.graphics_queue().queue_family_index(),
-                CommandBufferUsage::MultipleSubmit,
-            )
-            .unwrap();
+                CommandBufferUsage::OneTimeSubmit,
+            ).unwrap();
 
             builder
                 .begin_render_pass(
@@ -128,14 +144,21 @@ impl TriangleRenderer {
                         clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
                         ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                     },
-                    SubpassContents::Inline,
+                    SubpassBeginInfo {
+                        contents: SubpassContents::Inline,
+                        ..Default::default()
+                    },
                 )
                 .unwrap()
+                .set_viewport(0, [viewport].into_iter().collect())
+                .unwrap()
                 .bind_pipeline_graphics(pipeline.clone())
+                .unwrap()
                 .bind_vertex_buffers(0, vertex_buffer.clone())
+                .unwrap()
                 .draw(vertex_buffer.len() as u32, 1, 0, 0)
                 .unwrap()
-                .end_render_pass()
+                .end_render_pass(Default::default())
                 .unwrap();
 
             builder.build().unwrap()

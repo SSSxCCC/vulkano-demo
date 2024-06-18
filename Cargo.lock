@@ -531,8 +531,8 @@ dependencies = [
  "egui",
  "egui-winit",
  "image",
- "vulkano",
- "vulkano-shaders",
+ "vulkano 0.33.0",
+ "vulkano-shaders 0.33.0",
  "winit",
 ]
 
@@ -797,9 +797,9 @@ dependencies = [
  "android_logger",
  "env_logger",
  "log",
- "vulkano",
- "vulkano-shaders",
- "vulkano-win",
+ "vulkano 0.33.0",
+ "vulkano-shaders 0.33.0",
+ "vulkano-win 0.33.0",
  "winit",
 ]
 
@@ -1085,10 +1085,10 @@ dependencies = [
  "android_logger",
  "env_logger",
  "log",
- "vulkano",
- "vulkano-shaders",
- "vulkano-util",
- "vulkano-win",
+ "vulkano 0.34.1",
+ "vulkano-shaders 0.34.0",
+ "vulkano-util 0.34.1",
+ "vulkano-win 0.34.0",
  "winit",
 ]
 
@@ -1903,10 +1903,10 @@ dependencies = [
  "rapier2d",
  "rayon",
  "shipyard",
- "vulkano",
- "vulkano-shaders",
- "vulkano-util",
- "vulkano-win",
+ "vulkano 0.33.0",
+ "vulkano-shaders 0.33.0",
+ "vulkano-util 0.33.0",
+ "vulkano-win 0.33.0",
  "winit",
 ]
 
@@ -2123,6 +2123,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vk-parse"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "81086c28be67a8759cd80cbb3c8f7b520e0874605fc5eb74d5a1c9c2d1878e79"
+dependencies = [
+ "xml-rs",
+]
+
+[[package]]
 name = "vulkano"
 version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2147,8 +2156,38 @@ dependencies = [
  "serde_json",
  "smallvec",
  "thread_local",
- "vk-parse",
- "vulkano-macros",
+ "vk-parse 0.8.0",
+ "vulkano-macros 0.33.0",
+]
+
+[[package]]
+name = "vulkano"
+version = "0.34.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70f4278f76307b3c388679234b397b4f90de29cdba53873c26b624ed82653d75"
+dependencies = [
+ "ahash 0.8.3",
+ "ash",
+ "bytemuck",
+ "core-graphics-types",
+ "crossbeam-queue",
+ "half",
+ "heck",
+ "indexmap 2.0.0",
+ "libloading 0.8.0",
+ "objc",
+ "once_cell",
+ "parking_lot",
+ "proc-macro2",
+ "quote",
+ "raw-window-handle",
+ "regex",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "thread_local",
+ "vk-parse 0.12.0",
+ "vulkano-macros 0.34.0",
 ]
 
 [[package]]
@@ -2156,6 +2195,18 @@ name = "vulkano-macros"
 version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "895b8a2cac1e7650d2d0552f2392da0970a358515ac11a34adaf19bfdc771b98"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "vulkano-macros"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52be622d364272fd77e298e7f68e8547ae66e7687cb86eb85335412cee7e3965"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2175,7 +2226,22 @@ dependencies = [
  "quote",
  "shaderc",
  "syn 1.0.109",
- "vulkano",
+ "vulkano 0.33.0",
+]
+
+[[package]]
+name = "vulkano-shaders"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1f63401297565d74afb96e9add12587d8e46235140cee325a8eb6ba4602f4ee"
+dependencies = [
+ "ahash 0.8.3",
+ "heck",
+ "proc-macro2",
+ "quote",
+ "shaderc",
+ "syn 2.0.27",
+ "vulkano 0.34.1",
 ]
 
 [[package]]
@@ -2185,8 +2251,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a71b6df05a391161c1baec645a918437c2949d3494bf74c8358fde291d37f5f4"
 dependencies = [
  "ahash 0.8.3",
- "vulkano",
- "vulkano-win",
+ "vulkano 0.33.0",
+ "vulkano-win 0.33.0",
+ "winit",
+]
+
+[[package]]
+name = "vulkano-util"
+version = "0.34.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff1f96a4055a8362c8fa77a17c01da184c6412961cd9572110533ff89e6669a7"
+dependencies = [
+ "ahash 0.8.3",
+ "vulkano 0.34.1",
  "winit",
 ]
 
@@ -2199,7 +2276,20 @@ dependencies = [
  "core-graphics-types",
  "objc",
  "raw-window-handle",
- "vulkano",
+ "vulkano 0.33.0",
+ "winit",
+]
+
+[[package]]
+name = "vulkano-win"
+version = "0.34.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b26c66e8600327823c15184e096eab37a7491d2f3f52b4956c21d84594fb0183"
+dependencies = [
+ "core-graphics-types",
+ "objc",
+ "raw-window-handle",
+ "vulkano 0.34.1",
  "winit",
 ]
 
