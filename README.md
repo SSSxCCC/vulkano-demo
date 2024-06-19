@@ -1,12 +1,14 @@
 # vulkano-demo
 
-## Run desktop client
+## Run
+
+### Windows
 
 ```
 cargo run -p hello-triangle -F desktop
 ```
 
-## Build android app
+### Android
 
 ```
 rustup target add aarch64-linux-android

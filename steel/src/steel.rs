@@ -3,14 +3,14 @@ use glam::{Vec2, Vec3, Vec4, Mat4, Quat};
 use rapier2d::prelude::*;
 use rayon::iter::ParallelIterator;
 use shipyard::{World, Component, EntityId, View, IntoIter, IntoWithId, Unique, UniqueViewMut, ViewMut, AddComponent, Get};
-use vulkano::{render_pass::{FramebufferCreateInfo, Framebuffer, Subpass}, buffer::{BufferContents, Buffer, BufferCreateInfo, BufferUsage}, pipeline::{graphics::{vertex_input::Vertex, viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState}, GraphicsPipeline, Pipeline}, memory::allocator::{AllocationCreateInfo, MemoryUsage}, command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents, PrimaryCommandBufferAbstract}, sync::GpuFuture, image::ImageViewAbstract};
+use vulkano::{buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage}, command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents}, image::view::ImageView, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, pipeline::{graphics::{color_blend::{ColorBlendAttachmentState, ColorBlendState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Scissor, Viewport, ViewportState}, GraphicsPipelineCreateInfo}, layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{Framebuffer, FramebufferCreateInfo, Subpass}, sync::GpuFuture};
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
 
 pub struct DrawInfo<'a> {
     pub before_future: Box<dyn GpuFuture>,
     pub context: &'a VulkanoContext,
     pub renderer: &'a VulkanoWindowRenderer,
-    pub image: Arc<dyn ImageViewAbstract>, // the image we will draw
+    pub image: Arc<ImageView>, // the image we will draw
     pub window_size: Vec2,
 }
 
@@ -63,18 +63,17 @@ impl Engine for EngineImpl {
                 info.context.device().clone(),
                 attachments: {
                     color: {
-                        load: Clear,
-                        store: Store,
                         format: info.renderer.swapchain_format(), // set the format the same as the swapchain
                         samples: 1,
+                        load_op: Clear,
+                        store_op: Store,
                     },
                 },
                 pass: {
                     color: [color],
                     depth_stencil: {},
                 },
-            )
-            .unwrap();
+            ).unwrap();
     
             let framebuffer = Framebuffer::new(
                 render_pass.clone(),
@@ -82,27 +81,46 @@ impl Engine for EngineImpl {
                     attachments: vec![info.image],
                     ..Default::default()
                 },
-            )
-            .unwrap();
+            ).unwrap();
 
-            let vs = vs::load(info.context.device().clone()).expect("failed to create shader module");
-            let fs = fs::load(info.context.device().clone()).expect("failed to create shader module");
+            let vs = vs::load(info.context.device().clone()).unwrap().entry_point("main").unwrap();
+            let fs = fs::load(info.context.device().clone()).unwrap().entry_point("main").unwrap();
+            let vertex_input_state = MyVertex::per_vertex().definition(&vs.info().input_interface).unwrap();
+            let stages = [
+                PipelineShaderStageCreateInfo::new(vs),
+                PipelineShaderStageCreateInfo::new(fs),
+            ];
+            let layout = PipelineLayout::new(
+                info.context.device().clone(),
+                PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+                    .into_pipeline_layout_create_info(info.context.device().clone())
+                    .unwrap(),
+            ).unwrap();
+            let subpass = Subpass::from(render_pass, 0).unwrap();
         
             let viewport = Viewport {
-                origin: [0.0, 0.0],
-                dimensions: info.window_size.into(),
-                depth_range: 0.0..1.0,
+                offset: [0.0, 0.0],
+                extent: info.window_size.into(),
+                depth_range: 0.0..=1.0,
             };
 
-            let pipeline = GraphicsPipeline::start()
-                .vertex_input_state(MyVertex::per_vertex())
-                .vertex_shader(vs.entry_point("main").unwrap(), ())
-                .input_assembly_state(InputAssemblyState::new())
-                .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
-                .fragment_shader(fs.entry_point("main").unwrap(), ())
-                .render_pass(Subpass::from(render_pass, 0).unwrap())
-                .build(info.context.device().clone())
-                .unwrap();
+            let pipeline = GraphicsPipeline::new(info.context.device().clone(), None, GraphicsPipelineCreateInfo {
+                stages: stages.into_iter().collect(),
+                vertex_input_state: Some(vertex_input_state),
+                input_assembly_state: Some(InputAssemblyState::default()),
+                rasterization_state: Some(RasterizationState::default()),
+                multisample_state: Some(MultisampleState::default()),
+                color_blend_state: Some(ColorBlendState::with_attachment_states(
+                    subpass.num_color_attachments(),
+                    ColorBlendAttachmentState::default())),
+                viewport_state: Some(ViewportState {
+                    viewports: [viewport].into_iter().collect(),
+                    scissors: [Scissor::default()].into_iter().collect(),
+                    ..Default::default()
+                }),
+                subpass: Some(subpass.into()),
+                ..GraphicsPipelineCreateInfo::layout(layout)
+            }).unwrap();
 
             let command_buffer_allocator = StandardCommandBufferAllocator::new(info.context.device().clone(), Default::default());
 
@@ -110,8 +128,7 @@ impl Engine for EngineImpl {
                 &command_buffer_allocator,
                 info.renderer.graphics_queue().queue_family_index(),
                 CommandBufferUsage::MultipleSubmit,
-            )
-            .unwrap();
+            ).unwrap();
 
             command_buffer_builder
                 .begin_render_pass(
@@ -119,10 +136,12 @@ impl Engine for EngineImpl {
                         clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
                         ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
                     },
-                    SubpassContents::Inline,
-                )
-                .unwrap()
-                .bind_pipeline_graphics(pipeline.clone());
+                    SubpassBeginInfo {
+                        contents: SubpassContents::Inline,
+                        ..Default::default()
+                    },
+                ).unwrap()
+                .bind_pipeline_graphics(pipeline.clone()).unwrap();
 
             let camera_pos = Vec3::ZERO;
             let view = Mat4::look_at_lh(camera_pos, camera_pos + Vec3::NEG_Z, Vec3::Y);
@@ -149,13 +168,10 @@ impl Engine for EngineImpl {
                     position: [0.5, -0.5],
                 };
                 let vertex_buffer = Buffer::from_iter(
-                    info.context.memory_allocator().as_ref(),
-                    BufferCreateInfo {
-                        usage: BufferUsage::VERTEX_BUFFER,
-                        ..Default::default()
-                    },
+                    info.context.memory_allocator().clone(),
+                    BufferCreateInfo { usage: BufferUsage::VERTEX_BUFFER, ..Default::default() },
                     AllocationCreateInfo {
-                        usage: MemoryUsage::Upload,
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                         ..Default::default()
                     },
                     vec![vertex1, vertex2, vertex3, vertex4].into_iter(),
@@ -163,20 +179,22 @@ impl Engine for EngineImpl {
                 .unwrap();
         
                 let index_buffer = Buffer::from_iter(
-                    info.context.memory_allocator(),
+                    info.context.memory_allocator().clone(),
                     BufferCreateInfo { usage: BufferUsage::INDEX_BUFFER, ..Default::default() },
-                    AllocationCreateInfo { usage: MemoryUsage::Upload, ..Default::default() },
+                    AllocationCreateInfo {
+                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                        ..Default::default()
+                    },
                     vec![0u16, 1, 2, 2, 3, 0].into_iter()).unwrap();
 
                 command_buffer_builder
-                    .push_constants(pipeline.layout().clone(), 0, push_constants)
-                    .bind_vertex_buffers(0, vertex_buffer.clone())
-                    .bind_index_buffer(index_buffer.clone())
-                    .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
-                    .unwrap();
+                    .push_constants(pipeline.layout().clone(), 0, push_constants).unwrap()
+                    .bind_vertex_buffers(0, vertex_buffer.clone()).unwrap()
+                    .bind_index_buffer(index_buffer.clone()).unwrap()
+                    .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0).unwrap();
             }
 
-            command_buffer_builder.end_render_pass().unwrap();
+            command_buffer_builder.end_render_pass(Default::default()).unwrap();
             let command_buffer = command_buffer_builder.build().unwrap();
             command_buffer.execute_after(info.before_future, info.renderer.graphics_queue()).unwrap().boxed()
         })
