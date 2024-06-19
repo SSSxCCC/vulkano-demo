@@ -797,9 +797,8 @@ dependencies = [
  "android_logger",
  "env_logger",
  "log",
- "vulkano 0.33.0",
- "vulkano-shaders 0.33.0",
- "vulkano-win 0.33.0",
+ "vulkano 0.34.1",
+ "vulkano-shaders 0.34.0",
  "winit",
 ]
 
@@ -1088,7 +1087,6 @@ dependencies = [
  "vulkano 0.34.1",
  "vulkano-shaders 0.34.0",
  "vulkano-util 0.34.1",
- "vulkano-win 0.34.0",
  "winit",
 ]
 
@@ -1906,7 +1904,7 @@ dependencies = [
  "vulkano 0.33.0",
  "vulkano-shaders 0.33.0",
  "vulkano-util 0.33.0",
- "vulkano-win 0.33.0",
+ "vulkano-win",
  "winit",
 ]
 
@@ -2252,7 +2250,7 @@ checksum = "a71b6df05a391161c1baec645a918437c2949d3494bf74c8358fde291d37f5f4"
 dependencies = [
  "ahash 0.8.3",
  "vulkano 0.33.0",
- "vulkano-win 0.33.0",
+ "vulkano-win",
  "winit",
 ]
 
@@ -2277,19 +2275,6 @@ dependencies = [
  "objc",
  "raw-window-handle",
  "vulkano 0.33.0",
- "winit",
-]
-
-[[package]]
-name = "vulkano-win"
-version = "0.34.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b26c66e8600327823c15184e096eab37a7491d2f3f52b4956c21d84594fb0183"
-dependencies = [
- "core-graphics-types",
- "objc",
- "raw-window-handle",
- "vulkano 0.34.1",
  "winit",
 ]
 

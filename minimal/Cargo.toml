@@ -8,7 +8,6 @@ edition = "2021"
 [dependencies]
 vulkano = "0.34.1"
 vulkano-shaders = "0.34.0"
-vulkano-win = "0.34.0"
 vulkano-util = "0.34.1"
 log = "0.4"
 winit = { version = "0.28.6", features = [ "android-game-activity" ] }
@@ -28,6 +27,6 @@ name = "main"
 crate_type = ["cdylib"]
 
 [[bin]]
-name = "vulkano-android"
+name = "minimal"
 path="src/lib.rs"
 required-features = [ "desktop" ]
