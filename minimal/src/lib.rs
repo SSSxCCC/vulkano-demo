@@ -1,5 +1,5 @@
 use vulkano_util::{
-    context::VulkanoContext,
+    context::{VulkanoConfig, VulkanoContext},
     window::{VulkanoWindows, WindowDescriptor},
 };
 use winit::{
@@ -35,7 +35,9 @@ fn main() {
 }
 
 fn _main(event_loop: EventLoop<()>) {
-    let context = VulkanoContext::default();
+    let mut config = VulkanoConfig::default();
+    config.device_features.vulkan_memory_model = true;
+    let context = VulkanoContext::new(config);
     let mut windows = VulkanoWindows::default();
 
     log::warn!("Vulkano start main loop!");

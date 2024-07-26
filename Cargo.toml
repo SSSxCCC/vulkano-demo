@@ -2,5 +2,6 @@
 members = [
     "hello-triangle",
     "minimal",
+    "minimal/minimal-shader",
     "steel",
 ]

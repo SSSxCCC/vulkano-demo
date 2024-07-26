@@ -1,11 +1,8 @@
 use vulkano::{
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
-    command_buffer::{
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage}, command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
         PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
-    },
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
-    pipeline::{
+    }, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, pipeline::{
         graphics::{
             color_blend::{ColorBlendAttachmentState, ColorBlendState},
             input_assembly::InputAssemblyState,
@@ -17,9 +14,7 @@ use vulkano::{
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
         DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
-    },
-    render_pass::{Framebuffer, FramebufferCreateInfo, Subpass},
-    sync::GpuFuture,
+    }, render_pass::{Framebuffer, FramebufferCreateInfo, Subpass}, shader::{ShaderModule, ShaderModuleCreateInfo}, sync::GpuFuture
 };
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
 
@@ -30,7 +25,7 @@ struct MyVertex {
     position: [f32; 2],
 }
 
-mod vs {
+/*mod vs {
     vulkano_shaders::shader! {
         ty: "vertex",
         src: r"
@@ -58,7 +53,7 @@ mod fs {
             }
         ",
     }
-}
+}*/
 
 pub struct TriangleRenderer;
 
@@ -118,13 +113,25 @@ impl TriangleRenderer {
         )
         .unwrap();
 
-        let vs = vs::load(context.device().clone())
-            .unwrap()
-            .entry_point("main")
+        const SHADER: &[u8] = include_bytes!(env!("minimal_shader.spv"));
+        let mut shader_code = Vec::new();
+        let mut i = 0;
+        while i < SHADER.len() {
+            let a = SHADER[i] as u32;
+            let b = if i + 1 < SHADER.len() { (SHADER[i + 1] as u32) << 8 } else { 0 };
+            let c = if i + 2 < SHADER.len() { (SHADER[i + 2] as u32) << 16 } else { 0 };
+            let d = if i + 3 < SHADER.len() { (SHADER[i + 3] as u32) << 24 } else { 0 };
+            shader_code.push(a | b | c | d);
+            i += 4;
+        }
+
+        //let shader_code = SHADER.iter().map(|x| *x as u32).collect::<Vec<_>>();
+        let shader_module = unsafe { ShaderModule::new(context.device().clone(), ShaderModuleCreateInfo::new(&shader_code)) }.unwrap();
+        let vs = shader_module
+            .entry_point("main_vs")
             .unwrap();
-        let fs = fs::load(context.device().clone())
-            .unwrap()
-            .entry_point("main")
+        let fs = shader_module
+            .entry_point("main_fs")
             .unwrap();
 
         let vertex_input_state = MyVertex::per_vertex()
