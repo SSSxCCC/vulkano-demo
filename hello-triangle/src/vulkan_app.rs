@@ -1,28 +1,10 @@
-// Copyright (c) 2017 The vulkano developers
-// Licensed under the Apache License, Version 2.0
-// <LICENSE-APACHE or
-// http://www.apache.org/licenses/LICENSE-2.0> or the MIT
-// license <LICENSE-MIT or http://opensource.org/licenses/MIT>,
-// at your option. All files in the project carrying such
-// notice may not be copied, modified, or distributed except
-// according to those terms.
-
-//! This is the source code of the "Windowing" chapter at http://vulkano.rs.
-//!
-//! It is not commented, as the explanations can be found in the guide itself.
-
 use std::sync::Arc;
 
-use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
-use vulkano::pipeline::graphics::multisample::MultisampleState;
-use vulkano::pipeline::graphics::rasterization::RasterizationState;
-use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
-use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
-use vulkano::{Validated, VulkanError, VulkanLibrary};
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer};
 use vulkano::command_buffer::allocator::StandardCommandBufferAllocator;
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage, PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents
+    AutoCommandBufferBuilder, CommandBufferExecFuture, CommandBufferUsage,
+    PrimaryAutoCommandBuffer, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
 };
 use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
 use vulkano::device::{
@@ -32,18 +14,24 @@ use vulkano::image::view::ImageView;
 use vulkano::image::{Image, ImageUsage};
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator};
+use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
+use vulkano::pipeline::graphics::multisample::MultisampleState;
+use vulkano::pipeline::graphics::rasterization::RasterizationState;
 use vulkano::pipeline::graphics::vertex_input::{Vertex, VertexDefinition};
 use vulkano::pipeline::graphics::viewport::{Scissor, Viewport, ViewportState};
+use vulkano::pipeline::graphics::GraphicsPipelineCreateInfo;
+use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
 use vulkano::pipeline::{GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo};
 use vulkano::render_pass::{Framebuffer, FramebufferCreateInfo, RenderPass, Subpass};
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{
-    self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture,
-    SwapchainCreateInfo, SwapchainPresentInfo,
+    self, PresentFuture, Surface, Swapchain, SwapchainAcquireFuture, SwapchainCreateInfo,
+    SwapchainPresentInfo,
 };
 use vulkano::sync::future::{FenceSignalFuture, JoinFuture};
 use vulkano::sync::{self, GpuFuture};
+use vulkano::{Validated, VulkanError, VulkanLibrary};
 use winit::window::Window;
 
 #[derive(BufferContents, Vertex)]
@@ -109,7 +97,19 @@ pub struct VulkanApp {
     window_resized: bool,
     recreate_swapchain: bool,
     frames_in_flight: usize,
-    fences: Vec<Option<Arc<FenceSignalFuture<PresentFuture<CommandBufferExecFuture<JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>>>>>>>, // TODO: simplify
+    fences: Vec<
+        Option<
+            Arc<
+                FenceSignalFuture<
+                    PresentFuture<
+                        CommandBufferExecFuture<
+                            JoinFuture<Box<dyn GpuFuture>, SwapchainAcquireFuture>,
+                        >,
+                    >,
+                >,
+            >,
+        >,
+    >, // TODO: simplify
     previous_fence_i: u32,
 }
 
@@ -123,18 +123,20 @@ impl VulkanApp {
                 enabled_extensions: required_extensions,
                 ..Default::default()
             },
-        ).expect("failed to create instance");
+        )
+        .expect("failed to create instance");
 
-        let surface = Surface::from_window(instance.clone(), window.clone()).expect("failed to create surface");
+        let surface = Surface::from_window(instance.clone(), window.clone())
+            .expect("failed to create surface");
 
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
         };
-    
+
         let (physical_device, queue_family_index) =
             Self::select_physical_device(&instance, &surface, &device_extensions);
-    
+
         let (device, mut queues) = Device::new(
             physical_device.clone(),
             DeviceCreateInfo {
@@ -147,21 +149,21 @@ impl VulkanApp {
             },
         )
         .expect("failed to create device");
-    
+
         let queue = queues.next().unwrap();
-    
+
         let (swapchain, swapchain_images) = {
             let caps = physical_device
                 .surface_capabilities(&surface, Default::default())
                 .expect("failed to get surface capabilities");
-    
+
             let dimensions = window.inner_size();
             let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
             let image_format = physical_device
                 .surface_formats(&surface, Default::default())
                 .unwrap()[0]
                 .0;
-    
+
             Swapchain::new(
                 device.clone(),
                 surface.clone(),
@@ -176,12 +178,12 @@ impl VulkanApp {
             )
             .unwrap()
         };
-    
+
         let render_pass = Self::get_render_pass(device.clone(), swapchain.clone());
         let framebuffers = Self::get_framebuffers(&swapchain_images, render_pass.clone());
-    
+
         let memory_allocator = Arc::new(StandardMemoryAllocator::new_default(device.clone()));
-    
+
         let vertex1 = MyVertex {
             position: [-0.5, -0.5],
         };
@@ -203,8 +205,9 @@ impl VulkanApp {
                 ..Default::default()
             },
             vec![vertex1, vertex2, vertex3].into_iter(),
-        ).unwrap();
-    
+        )
+        .unwrap();
+
         let vs = vs::load(device.clone()).expect("failed to create shader module");
         let fs = fs::load(device.clone()).expect("failed to create shader module");
 
@@ -234,9 +237,32 @@ impl VulkanApp {
         );
 
         let num_swapchain_images = swapchain_images.len();
-        VulkanApp { window, library, instance, surface, physical_device, device, queue, swapchain, swapchain_images, render_pass, framebuffers, memory_allocator,
-            vertex_buffer, vs, fs, viewport, pipeline, command_buffer_allocator, command_buffers,
-            window_resized: false, recreate_swapchain: false, frames_in_flight: num_swapchain_images, fences: vec![None; num_swapchain_images], previous_fence_i: 0 }
+        VulkanApp {
+            window,
+            library,
+            instance,
+            surface,
+            physical_device,
+            device,
+            queue,
+            swapchain,
+            swapchain_images,
+            render_pass,
+            framebuffers,
+            memory_allocator,
+            vertex_buffer,
+            vs,
+            fs,
+            viewport,
+            pipeline,
+            command_buffer_allocator,
+            command_buffers,
+            window_resized: false,
+            recreate_swapchain: false,
+            frames_in_flight: num_swapchain_images,
+            fences: vec![None; num_swapchain_images],
+            previous_fence_i: 0,
+        }
     }
 
     fn select_physical_device(
@@ -267,7 +293,7 @@ impl VulkanApp {
             })
             .expect("no device available")
     }
-    
+
     fn get_render_pass(device: Arc<Device>, swapchain: Arc<Swapchain>) -> Arc<RenderPass> {
         vulkano::single_pass_renderpass!(
             device,
@@ -283,9 +309,10 @@ impl VulkanApp {
                 color: [color],
                 depth_stencil: {},
             },
-        ).unwrap()
+        )
+        .unwrap()
     }
-    
+
     fn get_framebuffers(
         images: &[Arc<Image>],
         render_pass: Arc<RenderPass>,
@@ -315,7 +342,9 @@ impl VulkanApp {
     ) -> Arc<GraphicsPipeline> {
         let vs = vs.entry_point("main").unwrap();
         let fs = fs.entry_point("main").unwrap();
-        let vertex_input_state = MyVertex::per_vertex().definition(&vs.info().input_interface).unwrap();
+        let vertex_input_state = MyVertex::per_vertex()
+            .definition(&vs.info().input_interface)
+            .unwrap();
         let stages = [
             PipelineShaderStageCreateInfo::new(vs),
             PipelineShaderStageCreateInfo::new(fs),
@@ -325,25 +354,32 @@ impl VulkanApp {
             PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
                 .into_pipeline_layout_create_info(device.clone())
                 .unwrap(),
-        ).unwrap();
+        )
+        .unwrap();
         let subpass = Subpass::from(render_pass, 0).unwrap();
-        GraphicsPipeline::new(device.clone(), None, GraphicsPipelineCreateInfo {
-            stages: stages.into_iter().collect(),
-            vertex_input_state: Some(vertex_input_state),
-            input_assembly_state: Some(InputAssemblyState::default()),
-            rasterization_state: Some(RasterizationState::default()),
-            multisample_state: Some(MultisampleState::default()),
-            color_blend_state: Some(ColorBlendState::with_attachment_states(
-                subpass.num_color_attachments(),
-                ColorBlendAttachmentState::default())),
-            viewport_state: Some(ViewportState {
-                viewports: [viewport].into_iter().collect(),
-                scissors: [Scissor::default()].into_iter().collect(),
-                ..Default::default()
-            }),
-            subpass: Some(subpass.into()),
-            ..GraphicsPipelineCreateInfo::layout(layout)
-        }).unwrap()
+        GraphicsPipeline::new(
+            device.clone(),
+            None,
+            GraphicsPipelineCreateInfo {
+                stages: stages.into_iter().collect(),
+                vertex_input_state: Some(vertex_input_state),
+                input_assembly_state: Some(InputAssemblyState::default()),
+                rasterization_state: Some(RasterizationState::default()),
+                multisample_state: Some(MultisampleState::default()),
+                color_blend_state: Some(ColorBlendState::with_attachment_states(
+                    subpass.num_color_attachments(),
+                    ColorBlendAttachmentState::default(),
+                )),
+                viewport_state: Some(ViewportState {
+                    viewports: [viewport].into_iter().collect(),
+                    scissors: [Scissor::default()].into_iter().collect(),
+                    ..Default::default()
+                }),
+                subpass: Some(subpass.into()),
+                ..GraphicsPipelineCreateInfo::layout(layout)
+            },
+        )
+        .unwrap()
     }
 
     fn get_command_buffers(
@@ -360,8 +396,9 @@ impl VulkanApp {
                     command_buffer_allocator,
                     queue.queue_family_index(),
                     CommandBufferUsage::MultipleSubmit,
-                ).unwrap();
-    
+                )
+                .unwrap();
+
                 builder
                     .begin_render_pass(
                         RenderPassBeginInfo {
@@ -372,14 +409,20 @@ impl VulkanApp {
                             contents: SubpassContents::Inline,
                             ..Default::default()
                         },
-                    ).unwrap()
-                    .bind_pipeline_graphics(pipeline.clone()).unwrap()
-                    .bind_vertex_buffers(0, vertex_buffer.clone()).unwrap()
-                    .draw(vertex_buffer.len() as u32, 1, 0, 0).unwrap()
-                    .end_render_pass(Default::default()).unwrap();
+                    )
+                    .unwrap()
+                    .bind_pipeline_graphics(pipeline.clone())
+                    .unwrap()
+                    .bind_vertex_buffers(0, vertex_buffer.clone())
+                    .unwrap()
+                    .draw(vertex_buffer.len() as u32, 1, 0, 0)
+                    .unwrap()
+                    .end_render_pass(Default::default())
+                    .unwrap();
 
                 builder.build().unwrap()
-            }).collect()
+            })
+            .collect()
     }
 
     pub fn notify_window_resized(&mut self) {
@@ -456,7 +499,10 @@ impl VulkanApp {
 
         let future = previous_future
             .join(acquire_future)
-            .then_execute(self.queue.clone(), self.command_buffers[image_i as usize].clone())
+            .then_execute(
+                self.queue.clone(),
+                self.command_buffers[image_i as usize].clone(),
+            )
             .unwrap()
             .then_swapchain_present(
                 self.queue.clone(),

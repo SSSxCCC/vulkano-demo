@@ -1,7 +1,13 @@
-use glam::Vec2;
 use egui_winit_vulkano::{Gui, GuiConfig};
-use vulkano::{image::{view::ImageView, Image, ImageCreateInfo, ImageUsage}, memory::allocator::AllocationCreateInfo};
-use vulkano_util::{window::{VulkanoWindows, WindowDescriptor}, context::VulkanoContext};
+use glam::Vec2;
+use vulkano::{
+    image::{view::ImageView, Image, ImageCreateInfo, ImageUsage},
+    memory::allocator::AllocationCreateInfo,
+};
+use vulkano_util::{
+    context::VulkanoContext,
+    window::{VulkanoWindows, WindowDescriptor},
+};
 use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
@@ -16,7 +22,9 @@ use winit::platform::android::activity::AndroidApp;
 #[cfg(target_os = "android")]
 #[no_mangle]
 fn android_main(app: AndroidApp) {
-    android_logger::init_once(android_logger::Config::default().with_max_level(log::LevelFilter::Trace));
+    android_logger::init_once(
+        android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
+    );
     use winit::platform::android::EventLoopBuilderExtAndroid;
     let event_loop = EventLoopBuilder::new().with_android_app(app).build();
     _main(event_loop);
@@ -25,7 +33,10 @@ fn android_main(app: AndroidApp) {
 #[cfg(not(target_os = "android"))]
 #[allow(dead_code)]
 fn main() {
-    env_logger::builder().filter_level(log::LevelFilter::Trace).parse_default_env().init();
+    env_logger::builder()
+        .filter_level(log::LevelFilter::Trace)
+        .parse_default_env()
+        .init();
     let event_loop = EventLoopBuilder::new().build();
     _main(event_loop);
 }
@@ -45,13 +56,18 @@ fn _main(event_loop: EventLoop<()>) {
     event_loop.run(move |event, event_loop, control_flow| match event {
         Event::Resumed => {
             log::debug!("Event::Resumed");
-            windows.create_window(&event_loop, &context,
-                &WindowDescriptor::default(), |_|{});
+            windows.create_window(&event_loop, &context, &WindowDescriptor::default(), |_| {});
             let renderer = windows.get_primary_renderer().unwrap();
-            gui = Some(Gui::new(&event_loop, renderer.surface(),
+            gui = Some(Gui::new(
+                &event_loop,
+                renderer.surface(),
                 renderer.graphics_queue(),
                 renderer.swapchain_format(),
-                GuiConfig { is_overlay: false, ..Default::default() }));
+                GuiConfig {
+                    is_overlay: false,
+                    ..Default::default()
+                },
+            ));
         }
         Event::Suspended => {
             log::debug!("Event::Suspended");
@@ -60,7 +76,7 @@ fn _main(event_loop: EventLoop<()>) {
             gui = None;
             windows.remove_renderer(windows.primary_window_id().unwrap());
         }
-        Event::WindowEvent { event , .. } => {
+        Event::WindowEvent { event, .. } => {
             if let Some(gui) = gui.as_mut() {
                 let _pass_events_to_game = !gui.update(&event);
             }
@@ -71,13 +87,17 @@ fn _main(event_loop: EventLoop<()>) {
                 }
                 WindowEvent::Resized(_) => {
                     log::debug!("WindowEvent::Resized");
-                    if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+                    if let Some(renderer) = windows.get_primary_renderer_mut() {
+                        renderer.resize()
+                    }
                 }
                 WindowEvent::ScaleFactorChanged { .. } => {
                     log::debug!("WindowEvent::ScaleFactorChanged");
-                    if let Some(renderer) = windows.get_primary_renderer_mut() { renderer.resize() }
+                    if let Some(renderer) = windows.get_primary_renderer_mut() {
+                        renderer.resize()
+                    }
                 }
-                _ => ()
+                _ => (),
             }
         }
         Event::RedrawRequested(_) => {
@@ -89,23 +109,36 @@ fn _main(event_loop: EventLoop<()>) {
                     demo_windows.ui(&ctx);
                     egui::Window::new("Scene").resizable(true).show(&ctx, |ui| {
                         let available_size = ui.available_size();
-                        if scene_image.is_none() || scene_size.x != available_size.x || scene_size.y != available_size.y {
+                        if scene_image.is_none()
+                            || scene_size.x != available_size.x
+                            || scene_size.y != available_size.y
+                        {
                             (scene_size.x, scene_size.y) = (available_size.x, available_size.y);
-                            let image = Image::new(context.memory_allocator().clone(), ImageCreateInfo {
-                                format: renderer.swapchain_format(),
-                                extent: [scene_size.x as u32, scene_size.y as u32, 1],
-                                usage:ImageUsage::SAMPLED | ImageUsage::COLOR_ATTACHMENT,
-                                ..Default::default()
-                            }, AllocationCreateInfo::default()).unwrap();
+                            let image = Image::new(
+                                context.memory_allocator().clone(),
+                                ImageCreateInfo {
+                                    format: renderer.swapchain_format(),
+                                    extent: [scene_size.x as u32, scene_size.y as u32, 1],
+                                    usage: ImageUsage::SAMPLED | ImageUsage::COLOR_ATTACHMENT,
+                                    ..Default::default()
+                                },
+                                AllocationCreateInfo::default(),
+                            )
+                            .unwrap();
                             scene_image = Some(ImageView::new_default(image).unwrap());
                             if let Some(scene_texture_id) = scene_texture_id {
                                 gui.unregister_user_image(scene_texture_id);
                             }
                             scene_texture_id = Some(gui.register_user_image_view(
-                                scene_image.as_ref().unwrap().clone(), Default::default()));
+                                scene_image.as_ref().unwrap().clone(),
+                                Default::default(),
+                            ));
                             log::info!("Created scene image, scene_size={scene_size}");
                         }
-                        ui.image(egui::ImageSource::Texture(egui::load::SizedTexture::new(*scene_texture_id.as_ref().unwrap(), available_size)));
+                        ui.image(egui::ImageSource::Texture(egui::load::SizedTexture::new(
+                            *scene_texture_id.as_ref().unwrap(),
+                            available_size,
+                        )));
                     });
                 });
 
@@ -113,8 +146,11 @@ fn _main(event_loop: EventLoop<()>) {
 
                 engine.update();
                 let gpu_future = engine.draw(DrawInfo {
-                    before_future: gpu_future, context: &context, renderer: &renderer,
-                    image: scene_image.as_ref().unwrap().clone(), window_size: scene_size,
+                    before_future: gpu_future,
+                    context: &context,
+                    renderer: &renderer,
+                    image: scene_image.as_ref().unwrap().clone(),
+                    window_size: scene_size,
                 });
 
                 let gpu_future = gui.draw_on_image(gpu_future, renderer.swapchain_image_view());
@@ -124,7 +160,9 @@ fn _main(event_loop: EventLoop<()>) {
         }
         Event::MainEventsCleared => {
             log::trace!("Event::MainEventsCleared");
-            if let Some(renderer) = windows.get_primary_renderer() { renderer.window().request_redraw() }
+            if let Some(renderer) = windows.get_primary_renderer() {
+                renderer.window().request_redraw()
+            }
         }
         _ => (),
     });

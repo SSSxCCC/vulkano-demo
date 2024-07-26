@@ -1,9 +1,35 @@
-use std::{collections::HashMap, sync::Arc};
-use glam::{Vec2, Vec3, Vec4, Mat4, Quat};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use rapier2d::prelude::*;
 use rayon::iter::ParallelIterator;
-use shipyard::{World, Component, EntityId, View, IntoIter, IntoWithId, Unique, UniqueViewMut, ViewMut, AddComponent, Get};
-use vulkano::{buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage}, command_buffer::{allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents}, image::view::ImageView, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter}, pipeline::{graphics::{color_blend::{ColorBlendAttachmentState, ColorBlendState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, vertex_input::{Vertex, VertexDefinition}, viewport::{Scissor, Viewport, ViewportState}, GraphicsPipelineCreateInfo}, layout::PipelineDescriptorSetLayoutCreateInfo, GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{Framebuffer, FramebufferCreateInfo, Subpass}, sync::GpuFuture};
+use shipyard::{
+    AddComponent, Component, EntityId, Get, IntoIter, IntoWithId, Unique, UniqueViewMut, View,
+    ViewMut, World,
+};
+use std::{collections::HashMap, sync::Arc};
+use vulkano::{
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
+    command_buffer::{
+        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
+        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
+    },
+    image::view::ImageView,
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
+    pipeline::{
+        graphics::{
+            color_blend::{ColorBlendAttachmentState, ColorBlendState},
+            input_assembly::InputAssemblyState,
+            multisample::MultisampleState,
+            rasterization::RasterizationState,
+            vertex_input::{Vertex, VertexDefinition},
+            viewport::{Scissor, Viewport, ViewportState},
+            GraphicsPipelineCreateInfo,
+        },
+        layout::PipelineDescriptorSetLayoutCreateInfo,
+        GraphicsPipeline, Pipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+    },
+    render_pass::{Framebuffer, FramebufferCreateInfo, Subpass},
+    sync::GpuFuture,
+};
 use vulkano_util::{context::VulkanoContext, renderer::VulkanoWindowRenderer};
 
 pub struct DrawInfo<'a> {
@@ -35,13 +61,33 @@ impl Engine for EngineImpl {
 
         self.world.add_unique(Physics2DManager::new());
 
-        self.world.add_entity((Transform2D { position: Vec3 { x: 0.0, y: 10.0, z: 0.0 }, rotation: 0.0, scale: Vec2::ONE },
-                RigidBody2D::new(RigidBodyType::Dynamic),
-                Collider2D::new(SharedShape::cuboid(0.5, 0.5), 0.7),
-                Renderer2D));
-        self.world.add_entity((Transform2D { position: Vec3 { x: 0.0, y: 0.0, z: 0.0 }, rotation: 0.0, scale: Vec2 { x: 20.0, y: 0.2 } },
-                Collider2D::new(SharedShape::cuboid(10.0, 0.1), 0.7),
-                Renderer2D));
+        self.world.add_entity((
+            Transform2D {
+                position: Vec3 {
+                    x: 0.0,
+                    y: 10.0,
+                    z: 0.0,
+                },
+                rotation: 0.0,
+                scale: Vec2::ONE,
+            },
+            RigidBody2D::new(RigidBodyType::Dynamic),
+            Collider2D::new(SharedShape::cuboid(0.5, 0.5), 0.7),
+            Renderer2D,
+        ));
+        self.world.add_entity((
+            Transform2D {
+                position: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                rotation: 0.0,
+                scale: Vec2 { x: 20.0, y: 0.2 },
+            },
+            Collider2D::new(SharedShape::cuboid(10.0, 0.1), 0.7),
+            Renderer2D,
+        ));
     }
 
     fn update(&mut self) {
@@ -58,146 +104,207 @@ impl Engine for EngineImpl {
     }
 
     fn draw(&mut self, info: DrawInfo) -> Box<dyn GpuFuture> {
-        self.world.run(|transform2d: View<Transform2D>, renderer2d: View<Renderer2D>| {
-            let render_pass = vulkano::single_pass_renderpass!(
-                info.context.device().clone(),
-                attachments: {
-                    color: {
-                        format: info.renderer.swapchain_format(), // set the format the same as the swapchain
-                        samples: 1,
-                        load_op: Clear,
-                        store_op: Store,
+        self.world.run(
+            |transform2d: View<Transform2D>, renderer2d: View<Renderer2D>| {
+                let render_pass = vulkano::single_pass_renderpass!(
+                    info.context.device().clone(),
+                    attachments: {
+                        color: {
+                            format: info.renderer.swapchain_format(), // set the format the same as the swapchain
+                            samples: 1,
+                            load_op: Clear,
+                            store_op: Store,
+                        },
                     },
-                },
-                pass: {
-                    color: [color],
-                    depth_stencil: {},
-                },
-            ).unwrap();
-    
-            let framebuffer = Framebuffer::new(
-                render_pass.clone(),
-                FramebufferCreateInfo {
-                    attachments: vec![info.image],
-                    ..Default::default()
-                },
-            ).unwrap();
-
-            let vs = vs::load(info.context.device().clone()).unwrap().entry_point("main").unwrap();
-            let fs = fs::load(info.context.device().clone()).unwrap().entry_point("main").unwrap();
-            let vertex_input_state = MyVertex::per_vertex().definition(&vs.info().input_interface).unwrap();
-            let stages = [
-                PipelineShaderStageCreateInfo::new(vs),
-                PipelineShaderStageCreateInfo::new(fs),
-            ];
-            let layout = PipelineLayout::new(
-                info.context.device().clone(),
-                PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
-                    .into_pipeline_layout_create_info(info.context.device().clone())
-                    .unwrap(),
-            ).unwrap();
-            let subpass = Subpass::from(render_pass, 0).unwrap();
-        
-            let viewport = Viewport {
-                offset: [0.0, 0.0],
-                extent: info.window_size.into(),
-                depth_range: 0.0..=1.0,
-            };
-
-            let pipeline = GraphicsPipeline::new(info.context.device().clone(), None, GraphicsPipelineCreateInfo {
-                stages: stages.into_iter().collect(),
-                vertex_input_state: Some(vertex_input_state),
-                input_assembly_state: Some(InputAssemblyState::default()),
-                rasterization_state: Some(RasterizationState::default()),
-                multisample_state: Some(MultisampleState::default()),
-                color_blend_state: Some(ColorBlendState::with_attachment_states(
-                    subpass.num_color_attachments(),
-                    ColorBlendAttachmentState::default())),
-                viewport_state: Some(ViewportState {
-                    viewports: [viewport].into_iter().collect(),
-                    scissors: [Scissor::default()].into_iter().collect(),
-                    ..Default::default()
-                }),
-                subpass: Some(subpass.into()),
-                ..GraphicsPipelineCreateInfo::layout(layout)
-            }).unwrap();
-
-            let command_buffer_allocator = StandardCommandBufferAllocator::new(info.context.device().clone(), Default::default());
-
-            let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
-                &command_buffer_allocator,
-                info.renderer.graphics_queue().queue_family_index(),
-                CommandBufferUsage::MultipleSubmit,
-            ).unwrap();
-
-            command_buffer_builder
-                .begin_render_pass(
-                    RenderPassBeginInfo {
-                        clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
-                        ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                    pass: {
+                        color: [color],
+                        depth_stencil: {},
                     },
-                    SubpassBeginInfo {
-                        contents: SubpassContents::Inline,
-                        ..Default::default()
-                    },
-                ).unwrap()
-                .bind_pipeline_graphics(pipeline.clone()).unwrap();
-
-            let camera_pos = Vec3::ZERO;
-            let view = Mat4::look_at_lh(camera_pos, camera_pos + Vec3::NEG_Z, Vec3::Y);
-            let half_height = 10.0;
-            let half_width = half_height * info.window_size.x / info.window_size.y as f32;
-            let projection = Mat4::orthographic_lh(half_width, -half_width, half_height, -half_height, -1000.0, 1000.0);
-
-            for (transform2d, renderer2d) in (&transform2d, &renderer2d).iter() {
-                let model = Mat4::from_scale_rotation_translation(Vec3 { x: transform2d.scale.x, y: transform2d.scale.y, z: 1.0 },
-                        Quat::from_axis_angle(Vec3::Z, transform2d.rotation), transform2d.position);
-
-                let push_constants = vs::PushConstants { projection_view: (projection * view).to_cols_array_2d(), model: model.to_cols_array_2d() };
-
-                let vertex1 = MyVertex {
-                    position: [-0.5, -0.5],
-                };
-                let vertex2 = MyVertex {
-                    position: [-0.5, 0.5],
-                };
-                let vertex3 = MyVertex {
-                    position: [0.5, 0.5],
-                };
-                let vertex4 = MyVertex {
-                    position: [0.5, -0.5],
-                };
-                let vertex_buffer = Buffer::from_iter(
-                    info.context.memory_allocator().clone(),
-                    BufferCreateInfo { usage: BufferUsage::VERTEX_BUFFER, ..Default::default() },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
-                        ..Default::default()
-                    },
-                    vec![vertex1, vertex2, vertex3, vertex4].into_iter(),
                 )
                 .unwrap();
-        
-                let index_buffer = Buffer::from_iter(
-                    info.context.memory_allocator().clone(),
-                    BufferCreateInfo { usage: BufferUsage::INDEX_BUFFER, ..Default::default() },
-                    AllocationCreateInfo {
-                        memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+
+                let framebuffer = Framebuffer::new(
+                    render_pass.clone(),
+                    FramebufferCreateInfo {
+                        attachments: vec![info.image],
                         ..Default::default()
                     },
-                    vec![0u16, 1, 2, 2, 3, 0].into_iter()).unwrap();
+                )
+                .unwrap();
+
+                let vs = vs::load(info.context.device().clone())
+                    .unwrap()
+                    .entry_point("main")
+                    .unwrap();
+                let fs = fs::load(info.context.device().clone())
+                    .unwrap()
+                    .entry_point("main")
+                    .unwrap();
+                let vertex_input_state = MyVertex::per_vertex()
+                    .definition(&vs.info().input_interface)
+                    .unwrap();
+                let stages = [
+                    PipelineShaderStageCreateInfo::new(vs),
+                    PipelineShaderStageCreateInfo::new(fs),
+                ];
+                let layout = PipelineLayout::new(
+                    info.context.device().clone(),
+                    PipelineDescriptorSetLayoutCreateInfo::from_stages(&stages)
+                        .into_pipeline_layout_create_info(info.context.device().clone())
+                        .unwrap(),
+                )
+                .unwrap();
+                let subpass = Subpass::from(render_pass, 0).unwrap();
+
+                let viewport = Viewport {
+                    offset: [0.0, 0.0],
+                    extent: info.window_size.into(),
+                    depth_range: 0.0..=1.0,
+                };
+
+                let pipeline = GraphicsPipeline::new(
+                    info.context.device().clone(),
+                    None,
+                    GraphicsPipelineCreateInfo {
+                        stages: stages.into_iter().collect(),
+                        vertex_input_state: Some(vertex_input_state),
+                        input_assembly_state: Some(InputAssemblyState::default()),
+                        rasterization_state: Some(RasterizationState::default()),
+                        multisample_state: Some(MultisampleState::default()),
+                        color_blend_state: Some(ColorBlendState::with_attachment_states(
+                            subpass.num_color_attachments(),
+                            ColorBlendAttachmentState::default(),
+                        )),
+                        viewport_state: Some(ViewportState {
+                            viewports: [viewport].into_iter().collect(),
+                            scissors: [Scissor::default()].into_iter().collect(),
+                            ..Default::default()
+                        }),
+                        subpass: Some(subpass.into()),
+                        ..GraphicsPipelineCreateInfo::layout(layout)
+                    },
+                )
+                .unwrap();
+
+                let command_buffer_allocator = StandardCommandBufferAllocator::new(
+                    info.context.device().clone(),
+                    Default::default(),
+                );
+
+                let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
+                    &command_buffer_allocator,
+                    info.renderer.graphics_queue().queue_family_index(),
+                    CommandBufferUsage::MultipleSubmit,
+                )
+                .unwrap();
 
                 command_buffer_builder
-                    .push_constants(pipeline.layout().clone(), 0, push_constants).unwrap()
-                    .bind_vertex_buffers(0, vertex_buffer.clone()).unwrap()
-                    .bind_index_buffer(index_buffer.clone()).unwrap()
-                    .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0).unwrap();
-            }
+                    .begin_render_pass(
+                        RenderPassBeginInfo {
+                            clear_values: vec![Some([0.0, 0.0, 1.0, 1.0].into())],
+                            ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+                        },
+                        SubpassBeginInfo {
+                            contents: SubpassContents::Inline,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap()
+                    .bind_pipeline_graphics(pipeline.clone())
+                    .unwrap();
 
-            command_buffer_builder.end_render_pass(Default::default()).unwrap();
-            let command_buffer = command_buffer_builder.build().unwrap();
-            command_buffer.execute_after(info.before_future, info.renderer.graphics_queue()).unwrap().boxed()
-        })
+                let camera_pos = Vec3::ZERO;
+                let view = Mat4::look_at_lh(camera_pos, camera_pos + Vec3::NEG_Z, Vec3::Y);
+                let half_height = 10.0;
+                let half_width = half_height * info.window_size.x / info.window_size.y as f32;
+                let projection = Mat4::orthographic_lh(
+                    half_width,
+                    -half_width,
+                    half_height,
+                    -half_height,
+                    -1000.0,
+                    1000.0,
+                );
+
+                for (transform2d, renderer2d) in (&transform2d, &renderer2d).iter() {
+                    let model = Mat4::from_scale_rotation_translation(
+                        Vec3 {
+                            x: transform2d.scale.x,
+                            y: transform2d.scale.y,
+                            z: 1.0,
+                        },
+                        Quat::from_axis_angle(Vec3::Z, transform2d.rotation),
+                        transform2d.position,
+                    );
+
+                    let push_constants = vs::PushConstants {
+                        projection_view: (projection * view).to_cols_array_2d(),
+                        model: model.to_cols_array_2d(),
+                    };
+
+                    let vertex1 = MyVertex {
+                        position: [-0.5, -0.5],
+                    };
+                    let vertex2 = MyVertex {
+                        position: [-0.5, 0.5],
+                    };
+                    let vertex3 = MyVertex {
+                        position: [0.5, 0.5],
+                    };
+                    let vertex4 = MyVertex {
+                        position: [0.5, -0.5],
+                    };
+                    let vertex_buffer = Buffer::from_iter(
+                        info.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::VERTEX_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        vec![vertex1, vertex2, vertex3, vertex4].into_iter(),
+                    )
+                    .unwrap();
+
+                    let index_buffer = Buffer::from_iter(
+                        info.context.memory_allocator().clone(),
+                        BufferCreateInfo {
+                            usage: BufferUsage::INDEX_BUFFER,
+                            ..Default::default()
+                        },
+                        AllocationCreateInfo {
+                            memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                                | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                            ..Default::default()
+                        },
+                        vec![0u16, 1, 2, 2, 3, 0].into_iter(),
+                    )
+                    .unwrap();
+
+                    command_buffer_builder
+                        .push_constants(pipeline.layout().clone(), 0, push_constants)
+                        .unwrap()
+                        .bind_vertex_buffers(0, vertex_buffer.clone())
+                        .unwrap()
+                        .bind_index_buffer(index_buffer.clone())
+                        .unwrap()
+                        .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
+                        .unwrap();
+                }
+
+                command_buffer_builder
+                    .end_render_pass(Default::default())
+                    .unwrap();
+                let command_buffer = command_buffer_builder.build().unwrap();
+                command_buffer
+                    .execute_after(info.before_future, info.renderer.graphics_queue())
+                    .unwrap()
+                    .boxed()
+            },
+        )
     }
 }
 
@@ -265,11 +372,21 @@ struct Physics2DManager {
 
 impl Physics2DManager {
     fn new() -> Self {
-        Physics2DManager { rigid_body_set: RigidBodySet::new(), collider_set: ColliderSet::new(), gravity: vector![0.0, -9.81],
-            integration_parameters: IntegrationParameters::default(), physics_pipeline: PhysicsPipeline::new(),
-            island_manager: IslandManager::new(), broad_phase: BroadPhase::new(), narrow_phase: NarrowPhase::new(),
-            impulse_joint_set: ImpulseJointSet::new(), multibody_joint_set: MultibodyJointSet::new(),
-            ccd_solver: CCDSolver::new(), physics_hooks: Box::new(()), event_handler: Box::new(()) }
+        Physics2DManager {
+            rigid_body_set: RigidBodySet::new(),
+            collider_set: ColliderSet::new(),
+            gravity: vector![0.0, -9.81],
+            integration_parameters: IntegrationParameters::default(),
+            physics_pipeline: PhysicsPipeline::new(),
+            island_manager: IslandManager::new(),
+            broad_phase: BroadPhase::new(),
+            narrow_phase: NarrowPhase::new(),
+            impulse_joint_set: ImpulseJointSet::new(),
+            multibody_joint_set: MultibodyJointSet::new(),
+            ccd_solver: CCDSolver::new(),
+            physics_hooks: Box::new(()),
+            event_handler: Box::new(()),
+        }
     }
 
     fn update(&mut self) {
@@ -291,9 +408,12 @@ impl Physics2DManager {
     }
 }
 
-fn physics2d_maintain_system(mut physics2d_manager: UniqueViewMut<Physics2DManager>,
-        mut rb2d: ViewMut<RigidBody2D>, mut col2d: ViewMut<Collider2D>,
-        mut transform2d: ViewMut<Transform2D>) {
+fn physics2d_maintain_system(
+    mut physics2d_manager: UniqueViewMut<Physics2DManager>,
+    mut rb2d: ViewMut<RigidBody2D>,
+    mut col2d: ViewMut<Collider2D>,
+    mut transform2d: ViewMut<Transform2D>,
+) {
     let physics2d_manager = physics2d_manager.as_mut();
     for (e, mut rb2d) in rb2d.inserted_or_modified_mut().iter().with_id() {
         if let Some(rigid_body) = physics2d_manager.rigid_body_set.get_mut(rb2d.handle) {
@@ -304,14 +424,19 @@ fn physics2d_maintain_system(mut physics2d_manager: UniqueViewMut<Physics2DManag
             }
             let transform2d = transform2d.get(e).unwrap();
             let rigid_body = RigidBodyBuilder::new(rb2d.body_type)
-                    .translation(vector![transform2d.position.x, transform2d.position.y])
-                    .rotation(transform2d.rotation).build();
+                .translation(vector![transform2d.position.x, transform2d.position.y])
+                .rotation(transform2d.rotation)
+                .build();
             rb2d.handle = physics2d_manager.rigid_body_set.insert(rigid_body);
         }
 
         if let Ok(col2d) = col2d.get(e) {
             if physics2d_manager.collider_set.contains(col2d.handle) {
-                physics2d_manager.collider_set.set_parent(col2d.handle, Some(rb2d.handle), &mut physics2d_manager.rigid_body_set)
+                physics2d_manager.collider_set.set_parent(
+                    col2d.handle,
+                    Some(rb2d.handle),
+                    &mut physics2d_manager.rigid_body_set,
+                )
             }
         }
     }
@@ -325,10 +450,16 @@ fn physics2d_maintain_system(mut physics2d_manager: UniqueViewMut<Physics2DManag
                 transform2d.add_component_unchecked(e, Transform2D::default());
             }
             let transform2d = transform2d.get(e).unwrap();
-            let mut collider = ColliderBuilder::new(col2d.shape.clone()).restitution(col2d.restitution).build();
+            let mut collider = ColliderBuilder::new(col2d.shape.clone())
+                .restitution(col2d.restitution)
+                .build();
             if let Ok(rb2d) = &rb2d.get(e) {
                 // TODO: add position and rotation relative to parent
-                col2d.handle = physics2d_manager.collider_set.insert_with_parent(collider, rb2d.handle, &mut physics2d_manager.rigid_body_set);
+                col2d.handle = physics2d_manager.collider_set.insert_with_parent(
+                    collider,
+                    rb2d.handle,
+                    &mut physics2d_manager.rigid_body_set,
+                );
             } else {
                 collider.set_translation(vector![transform2d.position.x, transform2d.position.y]);
                 //collider.set_rotation(transform2d.rotation); TODO: how to set_rotation?
@@ -341,15 +472,20 @@ fn physics2d_maintain_system(mut physics2d_manager: UniqueViewMut<Physics2DManag
     col2d.clear_all_inserted_and_modified();
 }
 
-fn physics2d_update_system(mut physics2d_manager: UniqueViewMut<Physics2DManager>,
-        rb2d: View<RigidBody2D>, mut transform2d: ViewMut<Transform2D>) {
+fn physics2d_update_system(
+    mut physics2d_manager: UniqueViewMut<Physics2DManager>,
+    rb2d: View<RigidBody2D>,
+    mut transform2d: ViewMut<Transform2D>,
+) {
     physics2d_manager.update();
-    (&rb2d, &mut transform2d).par_iter().for_each(|(rb2d, mut transform2d)| {
-        let rigid_body = &physics2d_manager.rigid_body_set[rb2d.handle];
-        transform2d.position.x = rigid_body.translation().x;
-        transform2d.position.y = rigid_body.translation().y;
-        transform2d.rotation = rigid_body.rotation().angle();
-    });
+    (&rb2d, &mut transform2d)
+        .par_iter()
+        .for_each(|(rb2d, mut transform2d)| {
+            let rigid_body = &physics2d_manager.rigid_body_set[rb2d.handle];
+            transform2d.position.x = rigid_body.translation().x;
+            transform2d.position.y = rigid_body.translation().y;
+            transform2d.rotation = rigid_body.rotation().angle();
+        });
 }
 
 trait Edit: Component {
@@ -359,7 +495,7 @@ trait Edit: Component {
         ComponentData::new(Self::name())
     }
 
-    fn from_data(&mut self, data: ComponentData) { }
+    fn from_data(&mut self, data: ComponentData) {}
 }
 
 #[derive(Debug)]
@@ -387,7 +523,10 @@ struct ComponentData {
 
 impl ComponentData {
     fn new(name: &'static str) -> Self {
-        ComponentData { name, variants: Vec::new() }
+        ComponentData {
+            name,
+            variants: Vec::new(),
+        }
     }
 }
 
@@ -400,14 +539,17 @@ struct EntityData {
 
 // WorldData contains all entity data in the world
 #[derive(Debug)]
-struct WorldData{
+struct WorldData {
     entities: Vec<EntityData>,
     id_index_map: HashMap<EntityId, usize>,
 }
 
 impl WorldData {
     fn new() -> Self {
-        WorldData{entities: Vec::new(), id_index_map: HashMap::new()}
+        WorldData {
+            entities: Vec::new(),
+            id_index_map: HashMap::new(),
+        }
     }
 
     fn add_component<T: Edit + Send + Sync>(&mut self, world: &World) {
@@ -415,7 +557,10 @@ impl WorldData {
             for (e, c) in c.iter().with_id() {
                 let index = *self.id_index_map.entry(e).or_insert(self.entities.len());
                 if index == self.entities.len() {
-                    self.entities.push(EntityData { id: e, components: Vec::new() });
+                    self.entities.push(EntityData {
+                        id: e,
+                        components: Vec::new(),
+                    });
                 }
                 self.entities[index].components.push(c.to_data());
             }
@@ -427,26 +572,55 @@ impl WorldData {
 struct Transform2D {
     position: Vec3,
     rotation: f32, // radian
-    scale: Vec2
+    scale: Vec2,
 }
 
 impl Edit for Transform2D {
-    fn name() -> &'static str { "Transform2D" }
+    fn name() -> &'static str {
+        "Transform2D"
+    }
 
     fn to_data(&self) -> ComponentData {
         let mut data = ComponentData::new(Self::name());
-        data.variants.push(Variant { name: "position", value: Value::Vec3(self.position) });
-        data.variants.push(Variant { name: "rotation", value: Value::Float32(self.rotation) });
-        data.variants.push(Variant { name: "scale", value: Value::Vec2(self.scale) });
+        data.variants.push(Variant {
+            name: "position",
+            value: Value::Vec3(self.position),
+        });
+        data.variants.push(Variant {
+            name: "rotation",
+            value: Value::Float32(self.rotation),
+        });
+        data.variants.push(Variant {
+            name: "scale",
+            value: Value::Vec2(self.scale),
+        });
         data
     }
 
     fn from_data(&mut self, data: ComponentData) {
         for v in data.variants {
             match v.name {
-                "position" => self.position = if let Value::Vec3(position) = v.value { position } else { Default::default() },
-                "rotation" => self.rotation = if let Value::Float32(rotation) = v.value { rotation } else { Default::default() },
-                "scale" => self.scale = if let Value::Vec2(scale) = v.value { scale } else { Vec2::ONE },
+                "position" => {
+                    self.position = if let Value::Vec3(position) = v.value {
+                        position
+                    } else {
+                        Default::default()
+                    }
+                }
+                "rotation" => {
+                    self.rotation = if let Value::Float32(rotation) = v.value {
+                        rotation
+                    } else {
+                        Default::default()
+                    }
+                }
+                "scale" => {
+                    self.scale = if let Value::Vec2(scale) = v.value {
+                        scale
+                    } else {
+                        Vec2::ONE
+                    }
+                }
                 _ => (),
             }
         }
@@ -462,12 +636,17 @@ struct RigidBody2D {
 
 impl RigidBody2D {
     fn new(body_type: RigidBodyType) -> Self {
-        RigidBody2D { handle: RigidBodyHandle::invalid(), body_type }
+        RigidBody2D {
+            handle: RigidBodyHandle::invalid(),
+            body_type,
+        }
     }
 }
 
 impl Edit for RigidBody2D {
-    fn name() -> &'static str { "RigidBody2D" }
+    fn name() -> &'static str {
+        "RigidBody2D"
+    }
 }
 
 struct ShapeWrapper(SharedShape);
@@ -482,7 +661,9 @@ impl std::ops::Deref for ShapeWrapper {
 
 impl std::fmt::Debug for ShapeWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("ShapeWrapper").field(&self.shape_type()).finish() // TODO: print all members
+        f.debug_tuple("ShapeWrapper")
+            .field(&self.shape_type())
+            .finish() // TODO: print all members
     }
 }
 
@@ -496,10 +677,16 @@ struct Collider2D {
 
 impl Collider2D {
     fn new(shape: SharedShape, restitution: f32) -> Self {
-        Collider2D { handle: ColliderHandle::invalid(), shape: ShapeWrapper(shape), restitution }
+        Collider2D {
+            handle: ColliderHandle::invalid(),
+            shape: ShapeWrapper(shape),
+            restitution,
+        }
     }
 }
 
 impl Edit for Collider2D {
-    fn name() -> &'static str { "Collider2D" }
+    fn name() -> &'static str {
+        "Collider2D"
+    }
 }
