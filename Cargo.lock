@@ -1220,7 +1220,6 @@ dependencies = [
  "log",
  "spirv-builder",
  "vulkano",
- "vulkano-shaders",
  "vulkano-util",
  "winit",
 ]

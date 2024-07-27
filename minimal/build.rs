@@ -1,9 +1,9 @@
-use spirv_builder::{MetadataPrintout, SpirvBuilder};
+use spirv_builder::{SpirvBuilder, SpirvMetadata};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
     SpirvBuilder::new("minimal-shader", "spirv-unknown-vulkan1.2")
-        .print_metadata(MetadataPrintout::Full)
+        .spirv_metadata(SpirvMetadata::NameVariables)
         .build()?;
 
     Ok(())
