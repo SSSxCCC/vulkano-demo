@@ -1,9 +1,12 @@
+use image::ImageReader;
+use std::io::Cursor;
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
         PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
     },
+    image::{Image, ImageCreateFlags, ImageCreateInfo},
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
         graphics::{
@@ -68,6 +71,15 @@ impl TriangleRenderer {
         context: &VulkanoContext,
         renderer: &VulkanoWindowRenderer,
     ) -> Box<dyn GpuFuture> {
+        let dynamic_image = ImageReader::new(Cursor::new(include_bytes!("../texture.jpg")))
+            .with_guessed_format()
+            .unwrap()
+            .decode()
+            .unwrap();
+        // let image = Image::new(context.memory_allocator().clone(), ImageCreateInfo {
+        //     image_type
+        // }, AllocationCreateInfo { memory_type_filter: MemoryTypeFilter::PREFER_DEVICE, ..Default::default() });
+
         let render_pass = vulkano::single_pass_renderpass!(
             context.device().clone(),
             attachments: {

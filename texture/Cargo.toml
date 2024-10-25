@@ -11,6 +11,7 @@ vulkano-shaders = "0.34.0"
 vulkano-util = "0.34.1"
 log = "0.4"
 winit = { version = "0.28.6", features = [ "android-game-activity" ] }
+image = "0.25.4"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger = "0.10.0"
