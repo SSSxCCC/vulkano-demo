@@ -3,4 +3,5 @@ members = [
     "hello-triangle",
     "minimal",
     "steel",
+    "texture",
 ]

@@ -1997,6 +1997,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "texture"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "env_logger",
+ "log",
+ "vulkano",
+ "vulkano-shaders",
+ "vulkano-util",
+ "winit",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
