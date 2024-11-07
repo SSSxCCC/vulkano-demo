@@ -6,8 +6,8 @@ use winit::{
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
 };
-mod triangle_renderer;
-use triangle_renderer::TriangleRenderer;
+mod texture_renderer;
+use texture_renderer::TriangleRenderer;
 
 #[cfg(target_os = "android")]
 use winit::platform::android::activity::AndroidApp;
