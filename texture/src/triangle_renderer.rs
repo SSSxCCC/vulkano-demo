@@ -1,12 +1,21 @@
-use image::ImageReader;
+use image::{GenericImageView, ImageReader};
 use std::io::Cursor;
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
     command_buffer::{
         allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo, SubpassContents,
+        CopyBufferToImageInfo, PrimaryCommandBufferAbstract, RenderPassBeginInfo, SubpassBeginInfo,
+        SubpassContents,
     },
-    image::{Image, ImageCreateFlags, ImageCreateInfo},
+    descriptor_set::{
+        allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
+    },
+    format::Format,
+    image::{
+        sampler::{Sampler, SamplerCreateInfo},
+        view::ImageView,
+        Image, ImageCreateInfo, ImageUsage,
+    },
     memory::allocator::{AllocationCreateInfo, MemoryTypeFilter},
     pipeline::{
         graphics::{
@@ -19,7 +28,8 @@ use vulkano::{
             GraphicsPipelineCreateInfo,
         },
         layout::PipelineDescriptorSetLayoutCreateInfo,
-        DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
+        DynamicState, GraphicsPipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+        PipelineShaderStageCreateInfo,
     },
     render_pass::{Framebuffer, FramebufferCreateInfo, Subpass},
     sync::GpuFuture,
@@ -41,8 +51,11 @@ mod vs {
 
             layout(location = 0) in vec2 position;
 
+            layout(location = 0) out vec2 tex_coord;
+
             void main() {
                 gl_Position = vec4(position, 0.0, 1.0);
+                tex_coord = position + vec2(0.5);
             }
         ",
     }
@@ -54,10 +67,15 @@ mod fs {
         src: r"
             #version 460
 
+            layout(location = 0) in vec2 tex_coord;
+
             layout(location = 0) out vec4 f_color;
 
+            layout(set = 0, binding = 0) uniform sampler s;
+            layout(set = 0, binding = 1) uniform texture2D tex;
+
             void main() {
-                f_color = vec4(1.0, 0.0, 0.0, 1.0);
+                f_color = texture(sampler2D(tex, s), tex_coord);
             }
         ",
     }
@@ -71,14 +89,77 @@ impl TriangleRenderer {
         context: &VulkanoContext,
         renderer: &VulkanoWindowRenderer,
     ) -> Box<dyn GpuFuture> {
+        let command_buffer_allocator =
+            StandardCommandBufferAllocator::new(context.device().clone(), Default::default());
+
         let dynamic_image = ImageReader::new(Cursor::new(include_bytes!("../texture.jpg")))
             .with_guessed_format()
             .unwrap()
             .decode()
             .unwrap();
-        // let image = Image::new(context.memory_allocator().clone(), ImageCreateInfo {
-        //     image_type
-        // }, AllocationCreateInfo { memory_type_filter: MemoryTypeFilter::PREFER_DEVICE, ..Default::default() });
+        let image_staging_buffer = Buffer::new_slice(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::TRANSFER_SRC,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::HOST_SEQUENTIAL_WRITE
+                    | MemoryTypeFilter::PREFER_HOST,
+                ..Default::default()
+            },
+            (dynamic_image.dimensions().0 * dynamic_image.dimensions().1) as u64 * 4,
+        )
+        .unwrap();
+        image_staging_buffer
+            .write()
+            .unwrap()
+            .copy_from_slice(&dynamic_image.to_rgba8());
+        let image = Image::new(
+            context.memory_allocator().clone(),
+            ImageCreateInfo {
+                usage: ImageUsage::TRANSFER_DST | ImageUsage::SAMPLED,
+                format: Format::R8G8B8A8_SRGB,
+                extent: [
+                    dynamic_image.dimensions().0,
+                    dynamic_image.dimensions().1,
+                    1,
+                ],
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let image_view = ImageView::new_default(image.clone()).unwrap();
+        let sampler = Sampler::new(
+            context.device().clone(),
+            SamplerCreateInfo::simple_repeat_linear_no_mipmap(),
+        )
+        .unwrap();
+        let mut upload_image_commnad_buffer = AutoCommandBufferBuilder::primary(
+            &command_buffer_allocator,
+            context.graphics_queue().queue_family_index(),
+            CommandBufferUsage::OneTimeSubmit,
+        )
+        .unwrap();
+        upload_image_commnad_buffer
+            .copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
+                image_staging_buffer,
+                image.clone(),
+            ))
+            .unwrap();
+        upload_image_commnad_buffer
+            .build()
+            .unwrap()
+            .execute(context.graphics_queue().clone())
+            .unwrap()
+            .then_signal_fence_and_flush()
+            .unwrap()
+            .wait(None)
+            .unwrap();
 
         let render_pass = vulkano::single_pass_renderpass!(
             context.device().clone(),
@@ -110,10 +191,13 @@ impl TriangleRenderer {
             position: [-0.5, -0.5],
         };
         let vertex2 = MyVertex {
-            position: [0.0, 0.5],
+            position: [-0.5, 0.5],
         };
         let vertex3 = MyVertex {
-            position: [0.5, -0.25],
+            position: [0.5, 0.5],
+        };
+        let vertex4 = MyVertex {
+            position: [0.5, -0.5],
         };
         let vertex_buffer = Buffer::from_iter(
             context.memory_allocator().clone(),
@@ -126,7 +210,22 @@ impl TriangleRenderer {
                     | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
-            vec![vertex1, vertex2, vertex3].into_iter(),
+            vec![vertex1, vertex2, vertex3, vertex4].into_iter(),
+        )
+        .unwrap();
+
+        let index_buffer = Buffer::from_iter(
+            context.memory_allocator().clone(),
+            BufferCreateInfo {
+                usage: BufferUsage::INDEX_BUFFER,
+                ..Default::default()
+            },
+            AllocationCreateInfo {
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE
+                    | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
+                ..Default::default()
+            },
+            vec![0u16, 1, 2, 2, 3, 0].into_iter(),
         )
         .unwrap();
 
@@ -185,8 +284,18 @@ impl TriangleRenderer {
         )
         .unwrap();
 
-        let command_buffer_allocator =
-            StandardCommandBufferAllocator::new(context.device().clone(), Default::default());
+        let descriptor_set_allocator =
+            StandardDescriptorSetAllocator::new(context.device().clone(), Default::default());
+        let descriptor_set = PersistentDescriptorSet::new(
+            &descriptor_set_allocator,
+            pipeline.layout().set_layouts()[0].clone(),
+            [
+                WriteDescriptorSet::sampler(0, sampler),
+                WriteDescriptorSet::image_view(1, image_view),
+            ],
+            [],
+        )
+        .unwrap();
 
         let command_buffer = {
             let mut builder = AutoCommandBufferBuilder::primary(
@@ -214,7 +323,16 @@ impl TriangleRenderer {
                 .unwrap()
                 .bind_vertex_buffers(0, vertex_buffer.clone())
                 .unwrap()
-                .draw(vertex_buffer.len() as u32, 1, 0, 0)
+                .bind_index_buffer(index_buffer.clone())
+                .unwrap()
+                .bind_descriptor_sets(
+                    PipelineBindPoint::Graphics,
+                    pipeline.layout().clone(),
+                    0,
+                    descriptor_set,
+                )
+                .unwrap()
+                .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
                 .unwrap()
                 .end_render_pass(Default::default())
                 .unwrap();
