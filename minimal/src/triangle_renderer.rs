@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
     command_buffer::{
@@ -127,9 +129,7 @@ impl TriangleRenderer {
             .entry_point("main")
             .unwrap();
 
-        let vertex_input_state = MyVertex::per_vertex()
-            .definition(&vs.info().input_interface)
-            .unwrap();
+        let vertex_input_state = MyVertex::per_vertex().definition(&vs).unwrap();
 
         let stages = [
             PipelineShaderStageCreateInfo::new(vs),
@@ -173,12 +173,14 @@ impl TriangleRenderer {
         )
         .unwrap();
 
-        let command_buffer_allocator =
-            StandardCommandBufferAllocator::new(context.device().clone(), Default::default());
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            context.device().clone(),
+            Default::default(),
+        ));
 
         let command_buffer = {
             let mut builder = AutoCommandBufferBuilder::primary(
-                &command_buffer_allocator,
+                command_buffer_allocator,
                 renderer.graphics_queue().queue_family_index(),
                 CommandBufferUsage::OneTimeSubmit,
             )
@@ -201,11 +203,11 @@ impl TriangleRenderer {
                 .bind_pipeline_graphics(pipeline.clone())
                 .unwrap()
                 .bind_vertex_buffers(0, vertex_buffer.clone())
-                .unwrap()
-                .draw(vertex_buffer.len() as u32, 1, 0, 0)
-                .unwrap()
-                .end_render_pass(Default::default())
                 .unwrap();
+
+            unsafe { builder.draw(vertex_buffer.len() as u32, 1, 0, 0) }.unwrap();
+
+            builder.end_render_pass(Default::default()).unwrap();
 
             builder.build().unwrap()
         };

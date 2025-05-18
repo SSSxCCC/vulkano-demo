@@ -3,14 +3,15 @@ use vulkano_util::{
     window::{VulkanoWindows, WindowDescriptor},
 };
 use winit::{
-    event::{Event, WindowEvent},
-    event_loop::{ControlFlow, EventLoop, EventLoopBuilder},
+    application::ApplicationHandler,
+    event::WindowEvent,
+    event_loop::{ControlFlow, EventLoop},
 };
 mod triangle_renderer;
 use triangle_renderer::TriangleRenderer;
 
 #[cfg(target_os = "android")]
-use winit::platform::android::activity::AndroidApp;
+use winit::platform::android::{activity::AndroidApp, EventLoopBuilderExtAndroid};
 
 #[cfg(target_os = "android")]
 #[no_mangle]
@@ -18,8 +19,7 @@ fn android_main(app: AndroidApp) {
     android_logger::init_once(
         android_logger::Config::default().with_max_level(log::LevelFilter::Trace),
     );
-    use winit::platform::android::EventLoopBuilderExtAndroid;
-    let event_loop = EventLoopBuilder::new().with_android_app(app).build();
+    let event_loop = EventLoop::builder().with_android_app(app).build().unwrap();
     _main(event_loop);
 }
 
@@ -30,58 +30,68 @@ fn main() {
         .filter_level(log::LevelFilter::Trace)
         .parse_default_env()
         .init();
-    let event_loop = EventLoopBuilder::new().build();
+    let event_loop = EventLoop::new().unwrap();
     _main(event_loop);
 }
 
 fn _main(event_loop: EventLoop<()>) {
-    let context = VulkanoContext::default();
-    let mut windows = VulkanoWindows::default();
+    event_loop.set_control_flow(ControlFlow::Poll);
 
     log::warn!("Vulkano start main loop!");
-    event_loop.run(
-        move |event: Event<'_, ()>, event_loop, control_flow| match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
+    event_loop.run_app(&mut Application::default()).unwrap();
+}
+
+#[derive(Default)]
+struct Application {
+    context: VulkanoContext,
+    windows: VulkanoWindows,
+}
+
+impl ApplicationHandler for Application {
+    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        log::debug!("Resumed");
+        self.windows.create_window(
+            &event_loop,
+            &self.context,
+            &WindowDescriptor::default(),
+            |_| {},
+        );
+    }
+
+    fn suspended(&mut self, _: &winit::event_loop::ActiveEventLoop) {
+        log::debug!("Suspended");
+        self.windows
+            .remove_renderer(self.windows.primary_window_id().unwrap());
+    }
+
+    fn window_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        _: winit::window::WindowId,
+        event: WindowEvent,
+    ) {
+        match event {
+            WindowEvent::CloseRequested => {
                 log::debug!("WindowEvent::CloseRequested");
-                *control_flow = ControlFlow::Exit;
+                event_loop.exit();
             }
-            Event::Resumed => {
-                log::debug!("Resumed");
-                windows.create_window(&event_loop, &context, &WindowDescriptor::default(), |_| {});
-            }
-            Event::Suspended => {
-                log::debug!("Suspended");
-                windows.remove_renderer(windows.primary_window_id().unwrap());
-            }
-            Event::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
-            } => {
-                log::debug!("WindowEvent::Resized");
-                if let Some(renderer) = windows.get_primary_renderer_mut() {
-                    renderer.resize()
-                }
-            }
-            Event::RedrawRequested(_) => {
-                log::trace!("RedrawRequested");
-                if let Some(renderer) = windows.get_primary_renderer_mut() {
-                    let before_future = renderer.acquire().unwrap();
-
-                    let after_future = TriangleRenderer::draw(before_future, &context, renderer);
-
+            WindowEvent::RedrawRequested => {
+                log::trace!("WindowEvent::RedrawRequested");
+                if let Some(renderer) = self.windows.get_primary_renderer_mut() {
+                    let before_future = renderer.acquire(None, |_| {}).unwrap();
+                    let after_future =
+                        TriangleRenderer::draw(before_future, &self.context, renderer);
                     renderer.present(after_future, true);
                 }
             }
-            Event::MainEventsCleared => {
-                log::trace!("MainEventsCleared");
-                if let Some(renderer) = windows.get_primary_renderer() {
-                    renderer.window().request_redraw()
+            WindowEvent::Resized(_) => {
+                log::debug!("WindowEvent::Resized");
+                if let Some(renderer) = self.windows.get_primary_renderer_mut() {
+                    renderer.resize();
+                    renderer.window().request_redraw();
                 }
             }
             _ => (),
-        },
-    );
+        }
+    }
 }
