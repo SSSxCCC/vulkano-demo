@@ -1101,9 +1101,9 @@ dependencies = [
  "android_logger",
  "env_logger",
  "log",
- "vulkano 0.34.1",
- "vulkano-shaders 0.34.0",
- "winit 0.28.6",
+ "vulkano 0.35.1",
+ "vulkano-shaders 0.35.0",
+ "winit 0.30.10",
 ]
 
 [[package]]

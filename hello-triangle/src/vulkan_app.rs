@@ -91,7 +91,7 @@ pub struct VulkanApp {
     fs: Arc<ShaderModule>,
     viewport: Viewport,
     pipeline: Arc<GraphicsPipeline>,
-    command_buffer_allocator: StandardCommandBufferAllocator,
+    command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
     command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
 
     window_resized: bool,
@@ -116,7 +116,7 @@ pub struct VulkanApp {
 impl VulkanApp {
     pub fn new(window: Arc<Window>) -> VulkanApp {
         let library = vulkano::VulkanLibrary::new().expect("no local Vulkan library/DLL");
-        let required_extensions = Surface::required_extensions(window.as_ref());
+        let required_extensions = Surface::required_extensions(window.as_ref()).unwrap();
         let instance = Instance::new(
             library.clone(),
             InstanceCreateInfo {
@@ -225,11 +225,13 @@ impl VulkanApp {
             viewport.clone(),
         );
 
-        let command_buffer_allocator =
-            StandardCommandBufferAllocator::new(device.clone(), Default::default());
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            device.clone(),
+            Default::default(),
+        ));
 
         let command_buffers = Self::get_command_buffers(
-            &command_buffer_allocator,
+            command_buffer_allocator.clone(),
             &queue,
             &pipeline,
             &framebuffers,
@@ -342,9 +344,7 @@ impl VulkanApp {
     ) -> Arc<GraphicsPipeline> {
         let vs = vs.entry_point("main").unwrap();
         let fs = fs.entry_point("main").unwrap();
-        let vertex_input_state = MyVertex::per_vertex()
-            .definition(&vs.info().input_interface)
-            .unwrap();
+        let vertex_input_state = MyVertex::per_vertex().definition(&vs).unwrap();
         let stages = [
             PipelineShaderStageCreateInfo::new(vs),
             PipelineShaderStageCreateInfo::new(fs),
@@ -383,7 +383,7 @@ impl VulkanApp {
     }
 
     fn get_command_buffers(
-        command_buffer_allocator: &StandardCommandBufferAllocator,
+        command_buffer_allocator: Arc<StandardCommandBufferAllocator>,
         queue: &Arc<Queue>,
         pipeline: &Arc<GraphicsPipeline>,
         framebuffers: &[Arc<Framebuffer>],
@@ -393,7 +393,7 @@ impl VulkanApp {
             .iter()
             .map(|framebuffer| {
                 let mut builder = AutoCommandBufferBuilder::primary(
-                    command_buffer_allocator,
+                    command_buffer_allocator.clone(),
                     queue.queue_family_index(),
                     CommandBufferUsage::MultipleSubmit,
                 )
@@ -414,15 +414,18 @@ impl VulkanApp {
                     .bind_pipeline_graphics(pipeline.clone())
                     .unwrap()
                     .bind_vertex_buffers(0, vertex_buffer.clone())
-                    .unwrap()
-                    .draw(vertex_buffer.len() as u32, 1, 0, 0)
-                    .unwrap()
-                    .end_render_pass(Default::default())
                     .unwrap();
+
+                unsafe { builder.draw(vertex_buffer.len() as u32, 1, 0, 0) }.unwrap();
+                builder.end_render_pass(Default::default()).unwrap();
 
                 builder.build().unwrap()
             })
             .collect()
+    }
+
+    pub fn window(&self) -> &Arc<Window> {
+        &self.window
     }
 
     pub fn notify_window_resized(&mut self) {
@@ -457,7 +460,7 @@ impl VulkanApp {
                     self.viewport.clone(),
                 );
                 self.command_buffers = Self::get_command_buffers(
-                    &self.command_buffer_allocator,
+                    self.command_buffer_allocator.clone(),
                     &self.queue,
                     &new_pipeline,
                     &new_framebuffers,
