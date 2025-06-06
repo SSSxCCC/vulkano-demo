@@ -1,5 +1,5 @@
 use image::{GenericImageView, ImageReader};
-use std::io::Cursor;
+use std::{io::Cursor, sync::Arc};
 use vulkano::{
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage},
     command_buffer::{
@@ -8,7 +8,7 @@ use vulkano::{
         SubpassContents,
     },
     descriptor_set::{
-        allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
+        allocator::StandardDescriptorSetAllocator, DescriptorSet, WriteDescriptorSet,
     },
     format::Format,
     image::{
@@ -81,16 +81,18 @@ mod fs {
     }
 }
 
-pub struct TriangleRenderer;
+pub struct TextureRenderer;
 
-impl TriangleRenderer {
+impl TextureRenderer {
     pub fn draw(
         before_future: Box<dyn GpuFuture>,
         context: &VulkanoContext,
         renderer: &VulkanoWindowRenderer,
     ) -> Box<dyn GpuFuture> {
-        let command_buffer_allocator =
-            StandardCommandBufferAllocator::new(context.device().clone(), Default::default());
+        let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
+            context.device().clone(),
+            Default::default(),
+        ));
 
         let dynamic_image = ImageReader::new(Cursor::new(include_bytes!("../texture.jpg")))
             .with_guessed_format()
@@ -140,7 +142,7 @@ impl TriangleRenderer {
         )
         .unwrap();
         let mut upload_image_commnad_buffer = AutoCommandBufferBuilder::primary(
-            &command_buffer_allocator,
+            command_buffer_allocator.clone(),
             context.graphics_queue().queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
@@ -238,9 +240,7 @@ impl TriangleRenderer {
             .entry_point("main")
             .unwrap();
 
-        let vertex_input_state = MyVertex::per_vertex()
-            .definition(&vs.info().input_interface)
-            .unwrap();
+        let vertex_input_state = MyVertex::per_vertex().definition(&vs).unwrap();
 
         let stages = [
             PipelineShaderStageCreateInfo::new(vs),
@@ -284,10 +284,12 @@ impl TriangleRenderer {
         )
         .unwrap();
 
-        let descriptor_set_allocator =
-            StandardDescriptorSetAllocator::new(context.device().clone(), Default::default());
-        let descriptor_set = PersistentDescriptorSet::new(
-            &descriptor_set_allocator,
+        let descriptor_set_allocator = Arc::new(StandardDescriptorSetAllocator::new(
+            context.device().clone(),
+            Default::default(),
+        ));
+        let descriptor_set = DescriptorSet::new(
+            descriptor_set_allocator.clone(),
             pipeline.layout().set_layouts()[0].clone(),
             [
                 WriteDescriptorSet::sampler(0, sampler),
@@ -299,7 +301,7 @@ impl TriangleRenderer {
 
         let command_buffer = {
             let mut builder = AutoCommandBufferBuilder::primary(
-                &command_buffer_allocator,
+                command_buffer_allocator.clone(),
                 renderer.graphics_queue().queue_family_index(),
                 CommandBufferUsage::OneTimeSubmit,
             )
@@ -331,11 +333,11 @@ impl TriangleRenderer {
                     0,
                     descriptor_set,
                 )
-                .unwrap()
-                .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
-                .unwrap()
-                .end_render_pass(Default::default())
                 .unwrap();
+
+            unsafe { builder.draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0) }.unwrap();
+
+            builder.end_render_pass(Default::default()).unwrap();
 
             builder.build().unwrap()
         };
