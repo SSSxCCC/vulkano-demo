@@ -140,9 +140,7 @@ impl Engine for EngineImpl {
                     .unwrap()
                     .entry_point("main")
                     .unwrap();
-                let vertex_input_state = MyVertex::per_vertex()
-                    .definition(&vs.info().input_interface)
-                    .unwrap();
+                let vertex_input_state = MyVertex::per_vertex().definition(&vs).unwrap();
                 let stages = [
                     PipelineShaderStageCreateInfo::new(vs),
                     PipelineShaderStageCreateInfo::new(fs),
@@ -186,13 +184,13 @@ impl Engine for EngineImpl {
                 )
                 .unwrap();
 
-                let command_buffer_allocator = StandardCommandBufferAllocator::new(
+                let command_buffer_allocator = Arc::new(StandardCommandBufferAllocator::new(
                     info.context.device().clone(),
                     Default::default(),
-                );
+                ));
 
                 let mut command_buffer_builder = AutoCommandBufferBuilder::primary(
-                    &command_buffer_allocator,
+                    command_buffer_allocator.clone(),
                     info.renderer.graphics_queue().queue_family_index(),
                     CommandBufferUsage::MultipleSubmit,
                 )
@@ -226,7 +224,7 @@ impl Engine for EngineImpl {
                     1000.0,
                 );
 
-                for (transform2d, renderer2d) in (&transform2d, &renderer2d).iter() {
+                for (transform2d, _renderer2d) in (&transform2d, &renderer2d).iter() {
                     let model = Mat4::from_scale_rotation_translation(
                         Vec3 {
                             x: transform2d.scale.x,
@@ -290,9 +288,12 @@ impl Engine for EngineImpl {
                         .bind_vertex_buffers(0, vertex_buffer.clone())
                         .unwrap()
                         .bind_index_buffer(index_buffer.clone())
-                        .unwrap()
-                        .draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
                         .unwrap();
+
+                    unsafe {
+                        command_buffer_builder.draw_indexed(index_buffer.len() as u32, 1, 0, 0, 0)
+                    }
+                    .unwrap();
                 }
 
                 command_buffer_builder
@@ -480,7 +481,7 @@ fn physics2d_update_system(
     physics2d_manager.update();
     (&rb2d, &mut transform2d)
         .par_iter()
-        .for_each(|(rb2d, mut transform2d)| {
+        .for_each(|(rb2d, transform2d)| {
             let rigid_body = &physics2d_manager.rigid_body_set[rb2d.handle];
             transform2d.position.x = rigid_body.translation().x;
             transform2d.position.y = rigid_body.translation().y;
