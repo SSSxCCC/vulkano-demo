@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "triangle",
+    "triangle-taskgraph",
     "minimal",
     "steel",
     "texture",
