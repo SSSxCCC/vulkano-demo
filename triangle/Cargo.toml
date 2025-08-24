@@ -1,5 +1,5 @@
 [package]
-name = "hello-triangle"
+name = "triangle"
 version = "0.1.0"
 edition = "2021"
 
@@ -26,6 +26,6 @@ name = "main"
 crate_type = ["cdylib"]
 
 [[bin]]
-name = "hello-triangle"
+name = "triangle"
 path="src/lib.rs"
 required-features = [ "desktop" ]

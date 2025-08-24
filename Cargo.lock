@@ -1006,18 +1006,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "hello-triangle"
-version = "0.1.0"
-dependencies = [
- "android_logger",
- "env_logger",
- "log",
- "vulkano",
- "vulkano-shaders",
- "winit",
-]
-
-[[package]]
 name = "hermit-abi"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2861,6 +2849,18 @@ name = "tracing-core"
 version = "0.1.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e672c95779cf947c5311f83787af4fa8fffd12fb27e4993211a84bdfd9610f9c"
+
+[[package]]
+name = "triangle"
+version = "0.1.0"
+dependencies = [
+ "android_logger",
+ "env_logger",
+ "log",
+ "vulkano",
+ "vulkano-shaders",
+ "winit",
+]
 
 [[package]]
 name = "ttf-parser"
