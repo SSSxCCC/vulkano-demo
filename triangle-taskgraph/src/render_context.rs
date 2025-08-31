@@ -1,12 +1,9 @@
+use crate::vulkan_context::VulkanContext;
 use std::slice;
 use std::sync::Arc;
 use vulkano::buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage};
-use vulkano::device::physical::{PhysicalDevice, PhysicalDeviceType};
-use vulkano::device::{
-    Device, DeviceCreateInfo, DeviceExtensions, Queue, QueueCreateInfo, QueueFlags,
-};
+use vulkano::device::Device;
 use vulkano::image::ImageUsage;
-use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::memory::allocator::{AllocationCreateInfo, DeviceLayout, MemoryTypeFilter};
 use vulkano::pipeline::graphics::color_blend::{ColorBlendAttachmentState, ColorBlendState};
 use vulkano::pipeline::graphics::input_assembly::InputAssemblyState;
@@ -19,10 +16,10 @@ use vulkano::pipeline::layout::PipelineDescriptorSetLayoutCreateInfo;
 use vulkano::pipeline::{
     DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo,
 };
-use vulkano::render_pass::{Framebuffer, Subpass};
+use vulkano::render_pass::Subpass;
 use vulkano::shader::ShaderModule;
 use vulkano::swapchain::{Surface, Swapchain, SwapchainCreateInfo};
-use vulkano::{Validated, VulkanError, VulkanLibrary};
+use vulkano::{Validated, VulkanError};
 use vulkano_taskgraph::command_buffer::RecordingCommandBuffer;
 use vulkano_taskgraph::graph::{
     AttachmentInfo, CompileInfo, ExecutableTaskGraph, ExecuteError, TaskGraph,
@@ -31,10 +28,10 @@ use vulkano_taskgraph::resource::{
     AccessTypes, Flight, HostAccessType, ImageLayoutType, Resources,
 };
 use vulkano_taskgraph::{resource_map, Id, QueueFamilyType, Task, TaskContext, TaskResult};
+use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
 const MAX_FRAMES_IN_FLIGHT: u32 = 2;
-const VALIDATEION_LAYER: &'static str = "VK_LAYER_KHRONOS_validation";
 
 #[derive(Clone, Copy, BufferContents, Vertex)]
 #[repr(C)]
@@ -73,85 +70,30 @@ mod fs {
     }
 }
 
-pub struct VulkanApp {
+pub struct RenderContext {
     window: Arc<Window>,
-    library: Arc<VulkanLibrary>,
-    instance: Arc<Instance>,
-    surface: Arc<Surface>,
-    physical_device: Arc<PhysicalDevice>,
-    device: Arc<Device>,
-    queue: Arc<Queue>,
-
-    vs: Arc<ShaderModule>,
-    fs: Arc<ShaderModule>,
     viewport: Viewport,
-
     recreate_swapchain: bool,
 
     resources: Arc<Resources>,
     flight_id: Id<Flight>,
-    vertex_buffer_id: Id<Buffer>,
     swapchain_id: Id<Swapchain>,
-
     task_graph: ExecutableTaskGraph<Self>,
     virtual_swapchain_id: Id<Swapchain>,
-    virtual_framebuffer_id: Id<Framebuffer>,
 }
 
-impl VulkanApp {
-    pub fn new(window: Arc<Window>) -> VulkanApp {
-        let library = vulkano::VulkanLibrary::new().expect("no local Vulkan library/DLL");
-        let required_extensions = Surface::required_extensions(window.as_ref()).unwrap();
-        let mut enabled_layers = Vec::new();
-        if library
-            .layer_properties()
-            .unwrap()
-            .any(|layer| layer.name() == VALIDATEION_LAYER)
-        {
-            enabled_layers.push(VALIDATEION_LAYER.into());
-        }
-        let instance = Instance::new(
-            library.clone(),
-            InstanceCreateInfo {
-                enabled_extensions: required_extensions,
-                enabled_layers,
-                ..Default::default()
-            },
-        )
-        .expect("failed to create instance");
-        let surface = Surface::from_window(instance.clone(), window.clone())
+impl RenderContext {
+    pub fn new(event_loop: &ActiveEventLoop, context: &VulkanContext) -> Self {
+        let window = Arc::new(
+            event_loop
+                .create_window(Window::default_attributes())
+                .unwrap(),
+        );
+        let surface = Surface::from_window(context.instance().clone(), window.clone())
             .expect("failed to create surface");
 
-        let device_extensions = DeviceExtensions {
-            khr_swapchain: true,
-            ..DeviceExtensions::empty()
-        };
-
-        let (physical_device, queue_family_index) =
-            Self::select_physical_device(&instance, &surface, &device_extensions);
-        log::info!(
-            "Using device: {} (type: {:?})",
-            physical_device.properties().device_name,
-            physical_device.properties().device_type,
-        );
-
-        let (device, mut queues) = Device::new(
-            physical_device.clone(),
-            DeviceCreateInfo {
-                queue_create_infos: vec![QueueCreateInfo {
-                    queue_family_index,
-                    ..Default::default()
-                }],
-                enabled_extensions: device_extensions,
-                ..Default::default()
-            },
-        )
-        .expect("failed to create device");
-
-        let queue = queues.next().unwrap();
-
-        let vs = vs::load(device.clone()).expect("failed to create shader module");
-        let fs = fs::load(device.clone()).expect("failed to create shader module");
+        let vs = vs::load(context.device().clone()).expect("failed to create shader module");
+        let fs = fs::load(context.device().clone()).expect("failed to create shader module");
 
         let viewport = Viewport {
             offset: [0.0, 0.0],
@@ -159,8 +101,7 @@ impl VulkanApp {
             depth_range: 0.0..=1.0,
         };
 
-        let resources = Resources::new(&device, &Default::default());
-
+        let resources = Resources::new(context.device(), &Default::default());
         let flight_id = resources.create_flight(MAX_FRAMES_IN_FLIGHT).unwrap();
 
         let vertices = [
@@ -190,7 +131,7 @@ impl VulkanApp {
             .unwrap();
         unsafe {
             vulkano_taskgraph::execute(
-                &queue,
+                context.queue(),
                 &resources,
                 flight_id,
                 |_command_buffer, task_context| {
@@ -207,12 +148,16 @@ impl VulkanApp {
         .unwrap();
 
         let (swapchain_id, swapchain_format) = {
-            let caps = physical_device
+            let caps = context
+                .device()
+                .physical_device()
                 .surface_capabilities(&surface, Default::default())
                 .expect("failed to get surface capabilities");
 
             let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
-            let image_format = physical_device
+            let image_format = context
+                .device()
+                .physical_device()
                 .surface_formats(&surface, Default::default())
                 .unwrap()[0]
                 .0;
@@ -221,7 +166,7 @@ impl VulkanApp {
                 resources
                     .create_swapchain(
                         flight_id,
-                        surface.clone(),
+                        surface,
                         SwapchainCreateInfo {
                             min_image_count: caps.min_image_count,
                             image_format,
@@ -270,8 +215,8 @@ impl VulkanApp {
 
         let mut task_graph = unsafe {
             task_graph.compile(&CompileInfo {
-                queues: &[&queue],
-                present_queue: Some(&queue),
+                queues: &[context.queue()],
+                present_queue: Some(context.queue()),
                 flight_id,
                 ..Default::default()
             })
@@ -281,9 +226,9 @@ impl VulkanApp {
         let node = task_graph.task_node_mut(render_node_id).unwrap();
 
         let pipeline = Self::create_pipeline(
-            device.clone(),
-            vs.clone(),
-            fs.clone(),
+            context.device().clone(),
+            vs,
+            fs,
             node.subpass().unwrap().clone(),
         );
 
@@ -292,57 +237,17 @@ impl VulkanApp {
             .unwrap()
             .pipeline = Some(pipeline);
 
-        VulkanApp {
+        RenderContext {
             window,
-            library,
-            instance,
-            surface,
-            physical_device,
-            device,
-            queue,
-            vs,
-            fs,
             viewport,
             recreate_swapchain: false,
 
             resources,
             flight_id,
-            vertex_buffer_id,
             swapchain_id,
-
             task_graph,
             virtual_swapchain_id,
-            virtual_framebuffer_id,
         }
-    }
-
-    fn select_physical_device(
-        instance: &Arc<Instance>,
-        surface: &Arc<Surface>,
-        device_extensions: &DeviceExtensions,
-    ) -> (Arc<PhysicalDevice>, u32) {
-        instance
-            .enumerate_physical_devices()
-            .expect("failed to enumerate physical devices")
-            .filter(|p| p.supported_extensions().contains(device_extensions))
-            .filter_map(|p| {
-                p.queue_family_properties()
-                    .iter()
-                    .enumerate()
-                    .position(|(i, q)| {
-                        q.queue_flags.contains(QueueFlags::GRAPHICS)
-                            && p.surface_support(i as u32, surface).unwrap_or(false)
-                    })
-                    .map(|q| (p, q as u32))
-            })
-            .min_by_key(|(p, _)| match p.properties().device_type {
-                PhysicalDeviceType::DiscreteGpu => 0,
-                PhysicalDeviceType::IntegratedGpu => 1,
-                PhysicalDeviceType::VirtualGpu => 2,
-                PhysicalDeviceType::Cpu => 3,
-                _ => 4,
-            })
-            .expect("no device available")
     }
 
     fn create_pipeline(
@@ -450,7 +355,7 @@ struct RenderTask {
 }
 
 impl Task for RenderTask {
-    type World = VulkanApp;
+    type World = RenderContext;
 
     fn clear_values(&self, clear_values: &mut vulkano_taskgraph::ClearValues<'_>) {
         clear_values.set(self.swapchain_id.current_image_id(), [0.0, 0.0, 1.0, 1.0]);

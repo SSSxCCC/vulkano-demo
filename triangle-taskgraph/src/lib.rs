@@ -1,9 +1,13 @@
-use std::sync::Arc;
+mod render_context;
+mod vulkan_context;
+
+use crate::{render_context::RenderContext, vulkan_context::VulkanContext};
 use winit::{
-    application::ApplicationHandler, event::WindowEvent, event_loop::EventLoop, window::Window,
+    application::ApplicationHandler,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, EventLoop},
+    window::WindowId,
 };
-mod vulkan_app;
-use vulkan_app::VulkanApp;
 
 #[cfg(target_os = "android")]
 use winit::platform::android::{activity::AndroidApp, EventLoopBuilderExtAndroid};
@@ -31,36 +35,32 @@ fn main() {
 
 fn _main(event_loop: EventLoop<()>) {
     log::warn!("Vulkano start main loop!");
-    event_loop.run_app(&mut Application::default()).unwrap();
+    let context = VulkanContext::new(&event_loop);
+    event_loop
+        .run_app(&mut Application {
+            context,
+            renderer: None,
+        })
+        .unwrap();
 }
 
-#[derive(Default)]
 struct Application {
-    vulkan_app: Option<VulkanApp>,
+    context: VulkanContext,
+    renderer: Option<RenderContext>,
 }
 
 impl ApplicationHandler for Application {
-    fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         log::debug!("Resumed");
-        let window = Arc::new(
-            event_loop
-                .create_window(Window::default_attributes())
-                .unwrap(),
-        );
-        self.vulkan_app = Some(VulkanApp::new(window.clone()));
+        self.renderer = Some(RenderContext::new(event_loop, &self.context));
     }
 
-    fn suspended(&mut self, _: &winit::event_loop::ActiveEventLoop) {
+    fn suspended(&mut self, _: &ActiveEventLoop) {
         log::debug!("Suspended");
-        self.vulkan_app = None;
+        self.renderer = None;
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-        _: winit::window::WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         match event {
             WindowEvent::CloseRequested => {
                 log::debug!("WindowEvent::CloseRequested");
@@ -68,15 +68,15 @@ impl ApplicationHandler for Application {
             }
             WindowEvent::RedrawRequested => {
                 log::trace!("WindowEvent::RedrawRequested");
-                if let Some(vulkan_app) = self.vulkan_app.as_mut() {
-                    vulkan_app.draw_frame();
+                if let Some(renderer) = self.renderer.as_mut() {
+                    renderer.draw_frame();
                 }
             }
             WindowEvent::Resized(_) => {
                 log::debug!("WindowEvent::Resized");
-                if let Some(vulkan_app) = self.vulkan_app.as_mut() {
-                    vulkan_app.notify_window_resized();
-                    vulkan_app.window().request_redraw();
+                if let Some(renderer) = self.renderer.as_mut() {
+                    renderer.notify_window_resized();
+                    renderer.window().request_redraw();
                 }
             }
             _ => (),
