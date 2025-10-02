@@ -31,8 +31,6 @@ use vulkano_taskgraph::{resource_map, Id, QueueFamilyType, Task, TaskContext, Ta
 use winit::event_loop::ActiveEventLoop;
 use winit::window::Window;
 
-const MAX_FRAMES_IN_FLIGHT: u32 = 2;
-
 #[derive(Clone, Copy, BufferContents, Vertex)]
 #[repr(C)]
 struct MyVertex {
@@ -77,6 +75,7 @@ pub struct RenderContext {
 
     resources: Arc<Resources>,
     flight_id: Id<Flight>,
+
     swapchain_id: Id<Swapchain>,
     task_graph: ExecutableTaskGraph<Self>,
     virtual_swapchain_id: Id<Swapchain>,
@@ -101,9 +100,6 @@ impl RenderContext {
             depth_range: 0.0..=1.0,
         };
 
-        let resources = Resources::new(context.device(), &Default::default());
-        let flight_id = resources.create_flight(MAX_FRAMES_IN_FLIGHT).unwrap();
-
         let vertices = [
             MyVertex {
                 position: [-0.5, -0.5],
@@ -115,7 +111,8 @@ impl RenderContext {
                 position: [0.5, -0.25],
             },
         ];
-        let vertex_buffer_id: Id<Buffer> = resources
+        let vertex_buffer_id: Id<Buffer> = context
+            .resources()
             .create_buffer(
                 BufferCreateInfo {
                     usage: BufferUsage::VERTEX_BUFFER,
@@ -132,8 +129,8 @@ impl RenderContext {
         unsafe {
             vulkano_taskgraph::execute(
                 context.queue(),
-                &resources,
-                flight_id,
+                context.resources(),
+                context.flight_id(),
                 |_command_buffer, task_context| {
                     task_context
                         .write_buffer::<[MyVertex]>(vertex_buffer_id, ..)?
@@ -163,9 +160,10 @@ impl RenderContext {
                 .0;
 
             (
-                resources
+                context
+                    .resources()
                     .create_swapchain(
-                        flight_id,
+                        context.flight_id(),
                         surface,
                         SwapchainCreateInfo {
                             min_image_count: caps.min_image_count,
@@ -181,7 +179,7 @@ impl RenderContext {
             )
         };
 
-        let mut task_graph = TaskGraph::new(&resources, 1, 2);
+        let mut task_graph = TaskGraph::new(context.resources(), 1, 2);
 
         let virtual_swapchain_id = task_graph.add_swapchain(&SwapchainCreateInfo {
             image_format: swapchain_format,
@@ -194,6 +192,7 @@ impl RenderContext {
                 "Render",
                 QueueFamilyType::Graphics,
                 RenderTask {
+                    resources: context.resources().clone(),
                     swapchain_id: virtual_swapchain_id,
                     pipeline: None,
                     vertex_buffer_id,
@@ -217,7 +216,7 @@ impl RenderContext {
             task_graph.compile(&CompileInfo {
                 queues: &[context.queue()],
                 present_queue: Some(context.queue()),
-                flight_id,
+                flight_id: context.flight_id(),
                 ..Default::default()
             })
         }
@@ -241,9 +240,8 @@ impl RenderContext {
             window,
             viewport,
             recreate_swapchain: false,
-
-            resources,
-            flight_id,
+            resources: context.resources().clone(),
+            flight_id: context.flight_id(),
             swapchain_id,
             task_graph,
             virtual_swapchain_id,
@@ -347,7 +345,14 @@ impl RenderContext {
     }
 }
 
+impl Drop for RenderContext {
+    fn drop(&mut self) {
+        unsafe { self.resources.remove_swapchain(self.swapchain_id).unwrap() };
+    }
+}
+
 struct RenderTask {
+    resources: Arc<Resources>,
     swapchain_id: Id<Swapchain>,
     pipeline: Option<Arc<GraphicsPipeline>>,
     vertex_buffer_id: Id<Buffer>,
@@ -372,5 +377,13 @@ impl Task for RenderTask {
         command_buffer.bind_vertex_buffers(0, &[self.vertex_buffer_id], &[0], &[], &[])?;
         unsafe { command_buffer.draw(self.vertex_count, 1, 0, 0) }?;
         Ok(())
+    }
+}
+
+impl Drop for RenderTask {
+    fn drop(&mut self) {
+        unsafe {
+            self.resources.remove_buffer(self.vertex_buffer_id).unwrap();
+        }
     }
 }

@@ -5,14 +5,19 @@ use vulkano::device::{
 };
 use vulkano::instance::{Instance, InstanceCreateInfo};
 use vulkano::swapchain::Surface;
+use vulkano_taskgraph::resource::{Flight, Resources};
+use vulkano_taskgraph::Id;
 use winit::raw_window_handle::HasDisplayHandle;
 
 const VALIDATION_LAYER: &'static str = "VK_LAYER_KHRONOS_validation";
+const MAX_FRAMES_IN_FLIGHT: u32 = 2;
 
 pub struct VulkanContext {
     instance: Arc<Instance>,
     device: Arc<Device>,
     queue: Arc<Queue>,
+    resources: Arc<Resources>,
+    flight_id: Id<Flight>,
 }
 
 impl VulkanContext {
@@ -25,6 +30,7 @@ impl VulkanContext {
             .unwrap()
             .any(|layer| layer.name() == VALIDATION_LAYER)
         {
+            log::debug!("Enabling validation layer");
             enabled_layers.push(VALIDATION_LAYER.into());
         }
         let required_extensions = Surface::required_extensions(event_loop).unwrap();
@@ -66,10 +72,15 @@ impl VulkanContext {
 
         let queue = queues.next().unwrap();
 
+        let resources = Resources::new(&device, &Default::default());
+        let flight_id = resources.create_flight(MAX_FRAMES_IN_FLIGHT).unwrap();
+
         VulkanContext {
             instance,
             device,
             queue,
+            resources,
+            flight_id,
         }
     }
 
@@ -112,5 +123,13 @@ impl VulkanContext {
 
     pub fn queue(&self) -> &Arc<Queue> {
         &self.queue
+    }
+
+    pub fn resources(&self) -> &Arc<Resources> {
+        &self.resources
+    }
+
+    pub fn flight_id(&self) -> Id<Flight> {
+        self.flight_id
     }
 }
